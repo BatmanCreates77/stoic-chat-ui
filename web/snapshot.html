@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>ScreenMeter Snapshot</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a dark instrument panel. Chart view is pure black so nothing but the patches emits light. */
+:root {
+  --bg: #0a0c10; --panel: #13171d; --line: #2a333d; --fg: #e6ebf0; --muted: #8e9ba8;
+  --accent: #5ee0d2; --good: #7ee787; --warn: #ffb454; --bad: #ff7b7b;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans); }
+.wrap { max-width: 880px; margin: 0 auto; padding-block: 20px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1 { font-size: 24px; margin: 0; text-wrap: balance; }
+h2 { font-size: 15px; margin: 0 0 8px; color: var(--accent); letter-spacing: .02em; }
+p { margin: 6px 0; }
+.muted { color: var(--muted); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.stack { display: grid; gap: 14px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button, label.btn { background: #1d2530; color: var(--fg); border: 1px solid var(--line); padding: 10px 16px; border-radius: 8px; font: 500 15px var(--sans); cursor: pointer; }
+button:hover, label.btn:hover { border-color: var(--accent); }
+button:focus-visible, label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary, label.btn.primary { background: var(--accent); color: #042a27; border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+label.btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+ol { margin: 6px 0 0 20px; padding: 0; } li { margin-bottom: 6px; }
+kbd { font-family: var(--mono); background: #1d2530; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.pill { display: inline-block; font: 500 12px var(--mono); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.pill.ok { color: var(--good); border-color: var(--good); } .pill.warn { color: var(--warn); border-color: var(--warn); } .pill.bad { color: var(--bad); border-color: var(--bad); }
+
+/* chart view */
+#chartView { position: fixed; inset: 0; background: #000; cursor: none; }
+#chartCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#chartHud { position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); font: 12px var(--mono); color: #555; cursor: default; }
+#chartHud button { padding: 4px 10px; font-size: 12px; color: #777; background: #111; }
+
+/* measure view */
+#stage { position: relative; width: 100%; aspect-ratio: 4 / 3; max-width: 100%; background: #000; border-radius: 10px; overflow: hidden; touch-action: none; }
+#photo { position: absolute; inset: 0; width: 100%; height: 100%; }
+#overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+#loupe { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 2px solid var(--accent); display: none; pointer-events: none; background: #000; overflow: hidden; }
+#loupe canvas { width: 100%; height: 100%; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tile { background: #0e1216; border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }
+.tile .k { color: var(--muted); font-size: 12px; } .tile .v { font: 500 24px var(--mono); margin: 2px 0; } .tile .n { font-size: 12px; color: var(--muted); }
+.tile.good .v { color: var(--good); } .tile.warn .v { color: var(--warn); } .tile.bad .v { color: var(--bad); }
+canvas.chart { width: 100%; height: auto; background: #0e1216; border-radius: 8px; max-width: 100%; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+td, th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+td:first-child, th:first-child { text-align: left; }
+.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid #555; vertical-align: middle; margin-right: 6px; }
+textarea { width: 100%; min-height: 90px; background: #0e1216; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; font: 12px var(--mono); padding: 8px; }
+.warnbox { border-left: 3px solid var(--warn); padding-left: 10px; color: var(--fg); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main id="home" class="wrap stack">
+  <header>
+    <div class="eyebrow">Phone camera · one photo · no app</div>
+    <h1>ScreenMeter Snapshot</h1>
+    <p class="muted">Measure a monitor's gamma, grey tracking and colour gamut with a single photo from your phone. The chart carries dither patches of exactly known brightness, so the page can undo the camera's tone curve without controlling the camera.</p>
+  </header>
+
+  <section class="card">
+    <h2>On the MacBook</h2>
+    <ol>
+      <li>Set brightness to the level you normally use. Turn off True Tone, Night Shift and auto-brightness. Pick the <em>sRGB</em> or default colour profile in System Settings.</li>
+      <li>Make sure the display scaling is an integer step. The chart reports the pixel ratio; it must be exactly 1 or 2.</li>
+      <li>Darken the room. Glossy screens reflect everything behind you into the photo.</li>
+      <li>Open the chart. It takes the whole screen; press <kbd>Esc</kbd> to come back.</li>
+    </ol>
+    <div class="row" style="margin-top:10px">
+      <a href="#chart" id="openChart"><button class="primary">Show the chart on this screen</button></a>
+      <span class="pill mono" id="dprPill"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>On the S24 Ultra</h2>
+    <ol>
+      <li>Open this same link on the phone and tap the button below.</li>
+      <li>Best: open the Samsung Camera in <em>Pro</em> mode first. ISO 50, shutter around 1/60, white balance fixed, and turn the focus ring slightly off so the screen's pixel grid blurs. Take the shot, then use <em>Choose from gallery</em> here. Quick alternative: <em>Take photo</em> opens the normal camera; turn Scene optimizer and HDR off and keep JPEG (not HEIF).</li>
+      <li>Stand 30 to 50 cm back, square to the screen, so the chart fills most of the frame. No zoom, no flash. The white patch should look bright but not blown out.</li>
+      <li>After the photo, drag the four handles onto the four corner markers, then analyse.</li>
+    </ol>
+    <div class="row" style="margin-top:10px">
+      <a href="#measure"><button class="primary">Measure with the phone camera</button></a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>What a single photo can and cannot tell you</h2>
+    <p><strong>Reliable:</strong> gamma curve shape, grey-step linearity, relative tint drift across greys, approximate gamut triangle.</p>
+    <p><strong>Not measurable this way:</strong> absolute brightness in nits, white point (the camera's auto white balance neutralises it), deep black and contrast (JPEG black crush), flicker. The companion Android app in the repository handles those with RAW capture and locked exposure.</p>
+  </section>
+</main>
+
+<section id="chartView" hidden>
+  <canvas id="chartCanvas"></canvas>
+  <div id="chartHud"><span id="chartInfo"></span> <button id="chartBack">Back</button></div>
+</section>
+
+<main id="measureView" class="wrap stack" hidden>
+  <header class="row" style="justify-content: space-between">
+    <h1>Measure</h1>
+    <a href="#"><button>Home</button></a>
+  </header>
+  <section class="card stack">
+    <div class="row">
+      <label class="btn primary">Take photo<input id="photoInput" type="file" accept="image/*" capture="environment"></label>
+      <label class="btn">Choose from gallery<input id="galleryInput" type="file" accept="image/*"></label>
+      <button id="analyse" disabled>Analyse</button>
+      <button id="resetCorners" disabled>Reset handles</button>
+    </div>
+    <p class="muted" id="photoHint">Drag each handle onto the centre of a corner marker (the small black square inside the white square). The loupe helps with precision.</p>
+    <div id="stage">
+      <canvas id="photo"></canvas>
+      <canvas id="overlay"></canvas>
+      <div id="loupe"><canvas id="loupeCanvas" width="120" height="120"></canvas></div>
+    </div>
+    <div id="checks" class="row"></div>
+  </section>
+
+  <section id="results" class="card stack" hidden>
+    <h2>Results</h2>
+    <div id="tiles" class="tiles"></div>
+    <div class="stack">
+      <div><h2>Gamma curve</h2><canvas id="chartGamma" class="chart" width="800" height="440"></canvas></div>
+      <div><h2>Camera tone curve recovered from dither patches</h2><canvas id="chartOecf" class="chart" width="800" height="360"></canvas><p class="muted">Each dot is a patch whose true brightness is known by construction (1, ½, ¼ … 1/64 of white). The curve is what the camera does to light; it is inverted, pixel by pixel, before any other patch is read. When the photo resolves the dots, the dots sit off the curve by design and a power-law fit is used instead.</p></div>
+      <div><h2>Grey tracking</h2><canvas id="chartGrey" class="chart" width="800" height="340"></canvas><p class="muted">Red minus blue channel balance of each grey step, relative to the white patch. A tilt means the panel's greys lean warm or cool. Auto white balance removes any overall cast, so only the slope is meaningful.</p></div>
+      <div><h2>Chromaticity (CIE 1931 xy, assuming the camera renders sRGB)</h2><canvas id="chartXy" class="chart" width="800" height="560"></canvas></div>
+    </div>
+    <div class="tablewrap"><table id="table"></table></div>
+    <div class="row"><button id="copyJson">Copy JSON</button><span id="copyMsg" class="muted"></span></div>
+    <textarea id="jsonOut" readonly aria-label="Results as JSON"></textarea>
+  </section>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+
+// ---------------- chart definition ----------------
+// Grid of 6 columns x 4 rows. Dither patches are drawn at device-pixel level so their average
+// linear luminance is exactly the stated fraction of white, independent of the panel's gamma.
+const PATCHES = [
+  { id: 'white', kind: 'solid', rgb: [255, 255, 255], L: 1 },
+  { id: 'd50', kind: 'dither', frac: 0.5, L: 0.5 },
+  { id: 'd25', kind: 'dither', frac: 0.25, L: 0.25 },
+  { id: 'd12', kind: 'dither', frac: 0.125, L: 0.125 },
+  { id: 'd6', kind: 'dither', frac: 0.0625, L: 0.0625 },
+  { id: 'd3', kind: 'dither', frac: 0.03125, L: 0.03125 },
+  { id: 'd1', kind: 'dither', frac: 0.015625, L: 0.015625 },
+  { id: 'black', kind: 'solid', rgb: [0, 0, 0], L: 0 },
+  { id: 'g240', kind: 'grey', level: 240 }, { id: 'g224', kind: 'grey', level: 224 }, { id: 'g208', kind: 'grey', level: 208 },
+  { id: 'g192', kind: 'grey', level: 192 }, { id: 'g160', kind: 'grey', level: 160 }, { id: 'g128', kind: 'grey', level: 128 },
+  { id: 'g112', kind: 'grey', level: 112 }, { id: 'g96', kind: 'grey', level: 96 }, { id: 'g80', kind: 'grey', level: 80 },
+  { id: 'g64', kind: 'grey', level: 64 }, { id: 'g48', kind: 'grey', level: 48 }, { id: 'g32', kind: 'grey', level: 32 }, { id: 'g16', kind: 'grey', level: 16 },
+  { id: 'red', kind: 'colour', rgb: [255, 0, 0] }, { id: 'green', kind: 'colour', rgb: [0, 255, 0] }, { id: 'blue', kind: 'colour', rgb: [0, 0, 255] },
+  { id: 'cyan', kind: 'colour', rgb: [0, 255, 255] }, { id: 'magenta', kind: 'colour', rgb: [255, 0, 255] }, { id: 'yellow', kind: 'colour', rgb: [255, 255, 0] },
+  { id: 'g8', kind: 'grey', level: 8 },
+];
+const COLS = 7, ROWS = 4;
+// Chart coordinates: unit square whose corners are the four fiducial centres. Patch (c,r) centre:
+function patchCentre(i) { const c = i % COLS, r = Math.floor(i / COLS); return [(c + 0.5) / COLS, (r + 0.5) / ROWS]; }
+for (const p of PATCHES) { if (p.kind === 'grey') p.rgb = [p.level, p.level, p.level]; }
+
+// ---------------- chart view ----------------
+function drawChart() {
+  const cv = $('chartCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.round(innerWidth * dpr), H = Math.round(innerHeight * dpr);
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const margin = Math.round(Math.min(W, H) * 0.08);
+  const cell = Math.floor(Math.min((W - 2 * margin) / COLS, (H - 2 * margin) / ROWS));
+  const gap = Math.round(cell * 0.18);
+  const gw = cell * COLS, gh = cell * ROWS;
+  const x0 = Math.round((W - gw) / 2), y0 = Math.round((H - gh) / 2);
+  PATCHES.forEach((p, i) => {
+    const c = i % COLS, r = Math.floor(i / COLS);
+    const px = x0 + c * cell + gap, py = y0 + r * cell + gap, s = cell - 2 * gap;
+    if (p.kind === 'dither') drawDither(ctx, px, py, s, p.frac);
+    else { ctx.fillStyle = `rgb(${p.rgb.join(',')})`; ctx.fillRect(px, py, s, s); }
+  });
+  // Fiducials: white square with black centre at each grid corner.
+  const f = Math.max(12, Math.round(cell * 0.22));
+  for (const [fx, fy] of [[x0, y0], [x0 + gw, y0], [x0, y0 + gh], [x0 + gw, y0 + gh]]) {
+    ctx.fillStyle = '#fff'; ctx.fillRect(fx - f, fy - f, 2 * f, 2 * f);
+    ctx.fillStyle = '#000'; ctx.fillRect(fx - f / 3, fy - f / 3, 2 * f / 3, 2 * f / 3);
+  }
+  const ok = Math.abs(dpr - Math.round(dpr)) < 1e-6;
+  $('chartInfo').textContent = `${W}x${H} device px, ratio ${dpr}${ok ? '' : '  WARNING: fractional scaling breaks the dither patches, use an integer scale'}  Esc exits`;
+}
+function drawDither(ctx, x, y, s, frac) {
+  const img = ctx.createImageData(s, s);
+  const d = img.data;
+  for (let r = 0; r < s; r++) for (let c = 0; c < s; c++) {
+    let on;
+    if (frac === 0.5) on = (r + c) % 2 === 0;
+    else if (frac === 0.25) on = r % 2 === 0 && c % 2 === 0;
+    else if (frac === 0.125) on = r % 4 === 0 && c % 2 === 0;
+    else if (frac === 0.0625) on = r % 4 === 0 && c % 4 === 0;
+    else if (frac === 0.03125) on = r % 4 === 0 && c % 8 === 0;
+    else on = r % 8 === 0 && c % 8 === 0;
+    const i = (r * s + c) * 4; const v = on ? 255 : 0;
+    d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, x, y);
+}
+
+// ---------------- measure view ----------------
+let bitmap = null;       // full-resolution decoded photo
+let sampleCanvas = null; // downscaled working copy
+let corners = null;      // [[x,y]x4] in sample-canvas pixels: TL, TR, BL, BR
+let dragging = -1;
+let lastResults = null;
+
+async function loadPhoto(file) {
+  if (!file) return;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch (e) {
+    setChecks([['bad', 'Could not decode this photo. Use JPEG (turn HEIF off in camera settings).']]);
+    return;
+  }
+  const maxW = 1600;
+  const scale = Math.min(1, maxW / bitmap.width);
+  sampleCanvas = document.createElement('canvas');
+  sampleCanvas.width = Math.round(bitmap.width * scale); sampleCanvas.height = Math.round(bitmap.height * scale);
+  sampleCanvas.getContext('2d').drawImage(bitmap, 0, 0, sampleCanvas.width, sampleCanvas.height);
+  $('stage').style.aspectRatio = `${sampleCanvas.width} / ${sampleCanvas.height}`;
+  const w = sampleCanvas.width, h = sampleCanvas.height;
+  corners = [[w * 0.15, h * 0.2], [w * 0.85, h * 0.2], [w * 0.15, h * 0.8], [w * 0.85, h * 0.8]];
+  $('analyse').disabled = false; $('resetCorners').disabled = false;
+  $('results').hidden = true;
+  setChecks([]);
+  requestAnimationFrame(render);
+}
+
+function render() {
+  if (!sampleCanvas) return;
+  const stage = $('stage');
+  const rect = stage.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  for (const id of ['photo', 'overlay']) { const c = $(id); c.width = Math.round(rect.width * dpr); c.height = Math.round(rect.height * dpr); }
+  const pc = $('photo').getContext('2d');
+  pc.drawImage(sampleCanvas, 0, 0, $('photo').width, $('photo').height);
+  const oc = $('overlay').getContext('2d');
+  oc.clearRect(0, 0, $('overlay').width, $('overlay').height);
+  const sx = $('overlay').width / sampleCanvas.width, sy = $('overlay').height / sampleCanvas.height;
+  const P = corners.map(([x, y]) => [x * sx, y * sy]);
+  oc.strokeStyle = '#5ee0d2'; oc.lineWidth = 2 * dpr; oc.setLineDash([6 * dpr, 4 * dpr]);
+  oc.beginPath(); oc.moveTo(...P[0]); oc.lineTo(...P[1]); oc.lineTo(...P[3]); oc.lineTo(...P[2]); oc.closePath(); oc.stroke();
+  oc.setLineDash([]);
+  // Patch centres preview
+  const H = homography(corners);
+  oc.strokeStyle = 'rgba(94,224,210,.7)'; oc.lineWidth = 1 * dpr;
+  PATCHES.forEach((p, i) => { const [u, v] = patchCentre(i); const [x, y] = apply(H, u, v); const r = patchRadius(H, u, v) * sx; oc.strokeRect(x * sx - r, y * sy - r, 2 * r, 2 * r); });
+  P.forEach(([x, y], i) => {
+    oc.fillStyle = i === dragging ? '#ffb454' : '#5ee0d2';
+    oc.beginPath(); oc.arc(x, y, 14 * dpr, 0, Math.PI * 2); oc.fill();
+    oc.fillStyle = '#000'; oc.font = `${12 * dpr}px IBM Plex Mono, monospace`; oc.textAlign = 'center'; oc.textBaseline = 'middle';
+    oc.fillText(['TL', 'TR', 'BL', 'BR'][i], x, y);
+  });
+}
+
+function stageToSample(ev) {
+  const rect = $('stage').getBoundingClientRect();
+  return [(ev.clientX - rect.left) / rect.width * sampleCanvas.width, (ev.clientY - rect.top) / rect.height * sampleCanvas.height];
+}
+$('stage').addEventListener('pointerdown', (ev) => {
+  if (!sampleCanvas) return;
+  const [x, y] = stageToSample(ev);
+  const rect = $('stage').getBoundingClientRect();
+  const tol = 28 / rect.width * sampleCanvas.width;
+  let best = -1, bd = Infinity;
+  corners.forEach(([cx, cy], i) => { const d = Math.hypot(cx - x, cy - y); if (d < bd) { bd = d; best = i; } });
+  if (bd > tol * 1.5) return;
+  dragging = best; $('stage').setPointerCapture(ev.pointerId); showLoupe(ev); render();
+});
+$('stage').addEventListener('pointermove', (ev) => {
+  if (dragging < 0) return;
+  const [x, y] = stageToSample(ev);
+  corners[dragging] = [Math.max(0, Math.min(sampleCanvas.width, x)), Math.max(0, Math.min(sampleCanvas.height, y))];
+  showLoupe(ev); render();
+});
+const endDrag = () => { dragging = -1; $('loupe').style.display = 'none'; render(); };
+$('stage').addEventListener('pointerup', endDrag); $('stage').addEventListener('pointercancel', endDrag);
+function showLoupe(ev) {
+  const loupe = $('loupe'); const rect = $('stage').getBoundingClientRect();
+  const lx = ev.clientX - rect.left, ly = ev.clientY - rect.top;
+  loupe.style.display = 'block';
+  loupe.style.left = `${Math.min(rect.width - 130, Math.max(0, lx + 24))}px`;
+  loupe.style.top = `${Math.max(0, ly - 150)}px`;
+  const [x, y] = corners[dragging];
+  const lc = $('loupeCanvas').getContext('2d');
+  lc.imageSmoothingEnabled = false;
+  lc.fillStyle = '#000'; lc.fillRect(0, 0, 120, 120);
+  lc.drawImage(sampleCanvas, x - 20, y - 20, 40, 40, 0, 0, 120, 120);
+  lc.strokeStyle = '#ffb454'; lc.lineWidth = 1; lc.beginPath(); lc.moveTo(60, 0); lc.lineTo(60, 120); lc.moveTo(0, 60); lc.lineTo(120, 60); lc.stroke();
+}
+$('resetCorners').onclick = () => { if (sampleCanvas) { const w = sampleCanvas.width, h = sampleCanvas.height; corners = [[w * 0.15, h * 0.2], [w * 0.85, h * 0.2], [w * 0.15, h * 0.8], [w * 0.85, h * 0.8]]; render(); } };
+$('photoInput').addEventListener('change', (ev) => loadPhoto(ev.target.files && ev.target.files[0]));
+$('galleryInput').addEventListener('change', (ev) => loadPhoto(ev.target.files && ev.target.files[0]));
+addEventListener('resize', () => { if (location.hash === '#chart') drawChart(); else render(); });
+
+// ---------------- geometry ----------------
+// Homography from unit square (0,0),(1,0),(0,1),(1,1) to the four corner points (TL,TR,BL,BR).
+function homography(c) {
+  const src = [[0, 0], [1, 0], [0, 1], [1, 1]];
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [u, v] = src[i], [x, y] = c[i];
+    A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]); b.push(x);
+    A.push([0, 0, 0, u, v, 1, -u * y, -v * y]); b.push(y);
+  }
+  const h = solve(A, b); h.push(1);
+  return h;
+}
+function solve(A, b) {
+  const n = b.length; const M = A.map((row, i) => [...row, b[i]]);
+  for (let col = 0; col < n; col++) {
+    let piv = col; for (let r = col + 1; r < n; r++) if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+    [M[col], M[piv]] = [M[piv], M[col]];
+    const d = M[col][col] || 1e-12;
+    for (let r = 0; r < n; r++) { if (r === col) continue; const f = M[r][col] / d; for (let k = col; k <= n; k++) M[r][k] -= f * M[col][k]; }
+  }
+  return M.map((row, i) => row[n] / (row[i] || 1e-12));
+}
+function apply(h, u, v) { const w = h[6] * u + h[7] * v + h[8]; return [(h[0] * u + h[1] * v + h[2]) / w, (h[3] * u + h[4] * v + h[5]) / w]; }
+// Half-size of the sampling window in image pixels: 22% of the local cell size (patches are 64% of a cell).
+function patchRadius(H, u, v) {
+  const [x1, y1] = apply(H, u - 0.5 / COLS, v), [x2, y2] = apply(H, u + 0.5 / COLS, v);
+  const [x3, y3] = apply(H, u, v - 0.5 / ROWS), [x4, y4] = apply(H, u, v + 0.5 / ROWS);
+  return 0.22 * Math.min(Math.hypot(x2 - x1, y2 - y1), Math.hypot(x4 - x3, y4 - y3));
+}
+
+// ---------------- sampling and analysis ----------------
+function samplePatches() {
+  const H = homography(corners);
+  const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+  return PATCHES.map((p, i) => {
+    const [u, v] = patchCentre(i); const [x, y] = apply(H, u, v); const r = Math.max(2, patchRadius(H, u, v));
+    const x0 = Math.max(0, Math.round(x - r)), y0 = Math.max(0, Math.round(y - r));
+    const w = Math.min(sampleCanvas.width - x0, Math.round(2 * r)), h = Math.min(sampleCanvas.height - y0, Math.round(2 * r));
+    const d = ctx.getImageData(x0, y0, Math.max(1, w), Math.max(1, h)).data;
+    let R = 0, G = 0, B = 0, n = 0, sat = 0;
+    const pix = new Float32Array(d.length / 4);
+    for (let k = 0; k < d.length; k += 4) { R += d[k]; G += d[k + 1]; B += d[k + 2]; pix[n++] = 0.2126 * d[k] + 0.7152 * d[k + 1] + 0.0722 * d[k + 2]; if (d[k] >= 254 || d[k + 1] >= 254 || d[k + 2] >= 254) sat++; }
+    return { ...p, code: [R / n, G / n, B / n], satFrac: sat / n, n, pix };
+  });
+}
+const luma = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+const srgbLin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+
+// Opto-electronic conversion function of the camera pipeline, from the dither patches.
+// The camera applies its tone curve per pixel before we can average. If the photo is blurred enough
+// that each dither patch is a smooth tone, the patch's mean code maps straight to its known
+// fraction ("table" method, non-parametric). If the dots are still partly resolved, a plain
+// average of codes is biased, so instead a power-law camera curve with a black offset is fitted so
+// that every dither patch, linearised pixel by pixel and averaged in light, lands on its known
+// fraction ("power" method). Both return code(0..255) -> linear fraction of white.
+function buildOecf(samples) {
+  const black = samples.find((s) => s.id === 'black');
+  const white = samples.find((s) => s.id === 'white');
+  const blackCode = black ? luma(black.code) : 0;
+  const dithers = samples.filter((s) => s.kind === 'dither');
+  const stats = (pix) => { let m = 0; for (let i = 0; i < pix.length; i++) m += pix[i]; m /= pix.length; let v = 0; for (let i = 0; i < pix.length; i++) v += (pix[i] - m) ** 2; return { m, cv: m > 0 ? Math.sqrt(v / pix.length) / m : 0 }; };
+  const texture = Math.max(...dithers.map((d) => stats(d.pix).cv));
+  const anchors = [...dithers, white].map((s) => ({ id: s.id, code: luma(s.code), L: s.L })).sort((a, b) => a.code - b.code);
+  let monotone = anchors.length >= 3; for (let i = 1; i < anchors.length; i++) if (anchors[i].code <= anchors[i - 1].code + 1) monotone = false;
+
+  // Power-law fit: L = ((code - b) / (255 - b)) ^ g, searched over (b, g).
+  const meanLin = (fn, pix) => { let s = 0; for (let i = 0; i < pix.length; i++) s += fn(pix[i]); return s / pix.length; };
+  const power = (b, g) => (code) => Math.pow(Math.max(0, code - b) / Math.max(1, 255 - b), g);
+  const cost = (b, g) => { const fn = power(b, g); const w = meanLin(fn, white.pix); let c = 0; for (const d of dithers) { const m = meanLin(fn, d.pix) / w; c += (Math.log(Math.max(m, 1e-6)) - Math.log(d.L)) ** 2; } return c; };
+  let best = { b: blackCode, g: 2.2, c: Infinity };
+  let bLo = blackCode - 12, bHi = blackCode + 24, gLo = 1.4, gHi = 3.6;
+  for (let round = 0; round < 3; round++) {
+    const nb = 9, ng = 11;
+    for (let i = 0; i <= nb; i++) for (let j = 0; j <= ng; j++) {
+      const b = bLo + (bHi - bLo) * i / nb, g = gLo + (gHi - gLo) * j / ng;
+      const c = cost(b, g); if (c < best.c) best = { b, g, c };
+    }
+    const bs = (bHi - bLo) / nb, gs = (gHi - gLo) / ng;
+    bLo = best.b - bs; bHi = best.b + bs; gLo = best.g - gs; gHi = best.g + gs;
+  }
+  const powerFn = power(best.b, best.g);
+  const powerResidual = Math.sqrt(best.c / Math.max(1, dithers.length));
+
+  // Table method: log(L) interpolated against log(code - black) between the anchors.
+  const lg = (c) => Math.log(Math.max(0.5, c - blackCode));
+  const tableFn = (code) => {
+    if (code >= anchors[anchors.length - 1].code) return anchors[anchors.length - 1].L;
+    let i = 1; while (i < anchors.length - 1 && code > anchors[i].code) i++;
+    const a = anchors[i - 1], b = anchors[i];
+    const t = (lg(code) - lg(a.code)) / (lg(b.code) - lg(a.code));
+    return Math.exp(Math.log(a.L) + t * (Math.log(b.L) - Math.log(a.L)));
+  };
+  const useTable = monotone && texture < 0.25;
+  const method = useTable ? 'table' : (monotone || dithers.length >= 3 ? 'power' : 'srgb');
+  const fn = method === 'table' ? tableFn : method === 'power' ? powerFn : (code) => srgbLin(Math.max(0, code - blackCode) / Math.max(1, 255 - blackCode));
+  return { fn, pts: anchors, monotone, blackCode, minCalibrated: anchors[0].L, method, texture, cameraGamma: best.g, cameraBlack: best.b, powerResidual };
+}
+
+function analyse() {
+  const samples = samplePatches();
+  const white = samples.find((s) => s.id === 'white'), black = samples.find((s) => s.id === 'black');
+  const checks = [];
+  if (white.satFrac > 0.5) checks.push(['bad', `White patch is clipped (${Math.round(white.satFrac * 100)}% of pixels at 255). Lower the exposure and retake; greys above ~192 are unreliable.`]);
+  else if (luma(white.code) < 180) checks.push(['warn', `White patch reads only ${luma(white.code).toFixed(0)}/255. Dark exposures compress the shadows; raise exposure or move closer.`]);
+  if (luma(black.code) > 40) checks.push(['warn', `Black patch reads ${luma(black.code).toFixed(0)}/255: room light or reflections are reaching the screen. Dim the room.`]);
+  const oecf = buildOecf(samples);
+  if (oecf.method === 'srgb') checks.push(['bad', 'Dither patches are unusable (handles misplaced, or the display is not at an integer scale). Falling back to an sRGB camera curve; treat results as rough.']);
+  else if (oecf.method === 'power' && oecf.powerResidual > 0.15) checks.push(['warn', `The dither dots are resolved in this photo and the fitted camera curve misses them by ${(oecf.powerResidual * 100).toFixed(0)}% on average. A slightly defocused Pro-mode shot, or standing further back, gives a cleaner curve.`]);
+  const meanLin = (pix) => { let s = 0; for (let i = 0; i < pix.length; i++) s += oecf.fn(pix[i]); return s / pix.length; };
+  const wL = Math.max(1e-6, meanLin(white.pix));
+
+  const greys = samples.filter((s) => s.kind === 'grey').map((s) => {
+    const rel = meanLin(s.pix) / wL;
+    return { id: s.id, level: s.level, rel, stepGamma: rel > 0 ? Math.log(rel) / Math.log(s.level / 255) : null, code: s.code, balance: (s.code[0] - s.code[2]) - (white.code[0] - white.code[2]) };
+  });
+  const usable = greys.filter((g) => g.rel >= oecf.minCalibrated * 0.8 && g.rel < 0.98 && g.level >= 16);
+  for (const g of greys) g.inRange = g.rel >= oecf.minCalibrated * 0.8 && g.rel < 0.98;
+  let num = 0, den = 0; for (const g of usable) { const lx = Math.log(g.level / 255), ly = Math.log(g.rel); num += lx * ly; den += lx * lx; }
+  const gamma = den > 0 ? num / den : null;
+
+  // Colour: linearise each channel through the same OECF (approximation), assume camera output is sRGB.
+  const M = [[0.4124564, 0.3575761, 0.1804375], [0.2126729, 0.7151522, 0.0721750], [0.0193339, 0.1191920, 0.9503041]];
+  const colours = samples.filter((s) => s.kind === 'colour').map((s) => {
+    const rgb = s.code.map((v) => oecf.fn(v) / wL);
+    const X = M[0][0] * rgb[0] + M[0][1] * rgb[1] + M[0][2] * rgb[2], Y = M[1][0] * rgb[0] + M[1][1] * rgb[1] + M[1][2] * rgb[2], Z = M[2][0] * rgb[0] + M[2][1] * rgb[1] + M[2][2] * rgb[2];
+    const sum = X + Y + Z || 1;
+    return { id: s.id, rgb: s.rgb, x: X / sum, y: Y / sum, Y, code: s.code };
+  });
+  const prim = ['red', 'green', 'blue'].map((id) => colours.find((c) => c.id === id)).map((c) => [c.x, c.y]);
+  const SRGB = [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]], P3 = [[0.68, 0.32], [0.265, 0.69], [0.15, 0.06]];
+  const cover = (ref) => { const inter = clipPoly(prim, ref); return polyArea(ref) > 0 ? polyArea(inter) / polyArea(ref) : 0; };
+  const gamut = { srgb: cover(SRGB), p3: cover(P3), area: polyArea(prim) / polyArea(SRGB) };
+  const balSlope = slope(usable.map((g) => [g.level, g.balance]));
+
+  const curve = []; for (let c = 0; c <= 255; c += 3) curve.push([c, oecf.fn(c)]);
+  lastResults = { minCalibrated: oecf.minCalibrated, method: oecf.method, texture: oecf.texture, cameraGamma: oecf.cameraGamma, cameraBlack: oecf.cameraBlack, powerResidual: oecf.powerResidual, takenAt: new Date().toISOString(), screen: { w: screen.width, h: screen.height, dpr: devicePixelRatio }, gamma, greys, colours, gamut, oecf: oecf.pts, blackCode: oecf.blackCode, whiteCode: luma(white.code), checks: checks.map((c) => c[1]), curve };
+  setChecks(checks);
+  renderResults(lastResults, samples);
+}
+
+function slope(pts) { if (pts.length < 2) return 0; const mx = pts.reduce((a, p) => a + p[0], 0) / pts.length, my = pts.reduce((a, p) => a + p[1], 0) / pts.length; let n = 0, d = 0; for (const [x, y] of pts) { n += (x - mx) * (y - my); d += (x - mx) ** 2; } return d ? n / d : 0; }
+function polyArea(p) { let a = 0; for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; a += x1 * y2 - x2 * y1; } return Math.abs(a) / 2; }
+function signed(p) { let a = 0; for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; a += x1 * y2 - x2 * y1; } return a / 2; }
+function clipPoly(subject, clip) {
+  let out = subject.slice(); const cc = signed(clip) > 0 ? clip : clip.slice().reverse();
+  for (let i = 0; i < cc.length; i++) {
+    const a = cc[i], b = cc[(i + 1) % cc.length]; const inp = out; out = []; if (!inp.length) break;
+    const inside = (p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0;
+    const inter = (p, q) => { const d1 = [p[0] - q[0], p[1] - q[1]], d2 = [a[0] - b[0], a[1] - b[1]]; const den = d1[0] * d2[1] - d1[1] * d2[0]; if (Math.abs(den) < 1e-12) return p; const n1 = p[0] * q[1] - p[1] * q[0], n2 = a[0] * b[1] - a[1] * b[0]; return [(n1 * d2[0] - d1[0] * n2) / den, (n1 * d2[1] - d1[1] * n2) / den]; };
+    for (let j = 0; j < inp.length; j++) { const cur = inp[j], prev = inp[(j + inp.length - 1) % inp.length]; if (inside(cur)) { if (!inside(prev)) out.push(inter(prev, cur)); out.push(cur); } else if (inside(prev)) out.push(inter(prev, cur)); }
+  }
+  return out;
+}
+
+function setChecks(list) {
+  $('checks').innerHTML = list.map(([cls, text]) => `<span class="pill ${cls}">${cls === 'bad' ? 'Problem' : 'Check'}</span><span class="warnbox">${text}</span>`).join('');
+}
+
+// ---------------- results rendering ----------------
+function renderResults(r, samples) {
+  $('results').hidden = false;
+  const tiles = [];
+  const tile = (k, v, n, cls = '') => tiles.push(`<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${n}</div></div>`);
+  if (r.gamma != null) tile('Gamma', r.gamma.toFixed(2), 'target 2.2 (sRGB), Macs often read 2.2 to 2.3', Math.abs(r.gamma - 2.2) < 0.12 ? 'good' : Math.abs(r.gamma - 2.2) < 0.3 ? 'warn' : 'bad');
+  const sg = r.greys.filter((g) => g.stepGamma != null && g.level >= 16);
+  const sgr = sg.filter((g) => g.inRange);
+  if (sgr.length) tile('Gamma spread', `${Math.min(...sgr.map((g) => g.stepGamma)).toFixed(2)} to ${Math.max(...sgr.map((g) => g.stepGamma)).toFixed(2)}`, `per-step gamma inside the calibrated range (above 1/${Math.round(1 / r.minCalibrated)} of white)`);
+  tile('sRGB coverage', `${Math.round(r.gamut.srgb * 100)}%`, `P3 ${Math.round(r.gamut.p3 * 100)}%, area ${Math.round(r.gamut.area * 100)}% of sRGB (indicative)`, r.gamut.srgb > 0.9 ? 'good' : 'warn');
+  const bal = slope(r.greys.filter((g) => g.level >= 16).map((g) => [g.level, g.balance]));
+  tile('Grey tint drift', `${(bal * 255).toFixed(1)}`, 'R minus B change from dark to white, in 8-bit codes; near 0 is neutral', Math.abs(bal * 255) < 4 ? 'good' : Math.abs(bal * 255) < 10 ? 'warn' : 'bad');
+  tile('Camera curve', r.method === 'table' ? 'table' : r.method === 'power' ? `γ ${r.cameraGamma.toFixed(2)}` : 'sRGB', r.method === 'table' ? 'dither patches blurred into smooth tones (best case)' : r.method === 'power' ? `dots partly resolved (texture ${r.texture.toFixed(2)}), power-law fit` : 'fallback, no calibration', r.method === 'srgb' ? 'bad' : '');
+  tile('Exposure', `${r.whiteCode.toFixed(0)} / ${r.blackCode.toFixed(0)}`, 'white and black patch codes out of 255', r.whiteCode > 180 && r.whiteCode < 252 && r.blackCode < 40 ? 'good' : 'warn');
+  $('tiles').innerHTML = tiles.join('');
+  drawGamma($('chartGamma'), r.greys, r.gamma);
+  drawOecf($('chartOecf'), r.oecf, r.blackCode, r.curve);
+  drawGrey($('chartGrey'), r.greys);
+  drawXy($('chartXy'), r.colours);
+  // (curve samples are attached in analyse)
+  const rows = samples.map((s) => `<tr><td><span class="sw" style="background: rgb(${(s.rgb || [128, 128, 128]).join(',')})"></span>${s.id}</td><td>${s.kind}</td><td>${s.code.map((v) => v.toFixed(1)).join(' / ')}</td><td>${s.L != null ? s.L.toFixed(4) : (r.greys.find((g) => g.id === s.id)?.rel ?? '').toString().slice(0, 6)}</td><td>${s.satFrac > 0.05 ? 'clip ' : ''}${s.kind === 'grey' && !(r.greys.find((g) => g.id === s.id)?.inRange) ? 'below range' : ''}</td></tr>`);
+  $('table').innerHTML = `<tr><th>Patch</th><th>Kind</th><th>Camera R / G / B</th><th>Linear (known or measured)</th><th>Flag</th></tr>${rows.join('')}`;
+  $('jsonOut').value = JSON.stringify(r, null, 1);
+  $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('copyJson').onclick = async () => {
+  try { await navigator.clipboard.writeText($('jsonOut').value); $('copyMsg').textContent = 'Copied'; }
+  catch { $('jsonOut').select(); $('copyMsg').textContent = 'Select and copy the text below'; }
+};
+
+// ---------------- charts ----------------
+const C = { grid: '#2a333d', text: '#8e9ba8', accent: '#5ee0d2', ref: '#6b7c8c', ref2: '#b48cff', warn: '#ffb454', good: '#7ee787', bad: '#ff7b7b' };
+function frame(cv, pad = { l: 60, r: 16, t: 20, b: 44 }) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#0e1216'; ctx.fillRect(0, 0, cv.width, cv.height); return { ctx, W: cv.width, H: cv.height, pad, pw: cv.width - pad.l - pad.r, ph: cv.height - pad.t - pad.b }; }
+function axes(f, xl, yl) { const { ctx, pad, W, H } = f; ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, H - pad.b); ctx.lineTo(W - pad.r, H - pad.b); ctx.stroke(); ctx.fillStyle = C.text; ctx.font = '13px IBM Plex Sans, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(xl, pad.l + f.pw / 2, H - 10); ctx.save(); ctx.translate(16, pad.t + f.ph / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(yl, 0, 0); ctx.restore(); }
+function legend(f, items) { const { ctx, pad } = f; let x = pad.l + 10; ctx.font = '12px IBM Plex Sans, sans-serif'; ctx.textAlign = 'left'; for (const [label, color] of items) { ctx.fillStyle = color; ctx.fillRect(x, pad.t + 4, 12, 3); ctx.fillStyle = C.text; ctx.fillText(label, x + 16, pad.t + 9); x += ctx.measureText(label).width + 34; } }
+function drawGamma(cv, greys, gamma) {
+  const f = frame(cv); const { ctx, pad, pw, ph, H } = f;
+  const X = (l) => pad.l + l / 255 * pw, Y = (v) => H - pad.b - v * ph;
+  axes(f, 'Input code (0-255)', 'Relative luminance');
+  ctx.setLineDash([3, 4]); ctx.strokeStyle = C.grid; ctx.fillStyle = C.text; ctx.textAlign = 'right';
+  for (let i = 1; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(pad.l, Y(i / 4)); ctx.lineTo(pad.l + pw, Y(i / 4)); ctx.stroke(); ctx.fillText((i / 4).toFixed(2), pad.l - 6, Y(i / 4) + 4); }
+  ctx.setLineDash([]);
+  const curve = (fn, color) => { ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath(); for (let l = 0; l <= 255; l++) { const p = [X(l), Y(fn(l / 255))]; l ? ctx.lineTo(...p) : ctx.moveTo(...p); } ctx.stroke(); };
+  curve((v) => v ** 2.2, C.ref); curve(srgbLin, C.ref2); if (gamma) curve((v) => v ** gamma, C.accent);
+  for (const g of greys) { ctx.fillStyle = g.inRange ? C.warn : C.text; ctx.beginPath(); ctx.arc(X(g.level), Y(Math.min(1.02, g.rel)), 5, 0, Math.PI * 2); ctx.fill(); }
+  legend(f, [['Measured', C.warn], ['Below calibrated range', C.text], [`Fit ${gamma ? gamma.toFixed(2) : '-'}`, C.accent], ['Gamma 2.2', C.ref], ['sRGB', C.ref2]]);
+}
+function drawOecf(cv, pts, blackCode, curve) {
+  const f = frame(cv); const { ctx, pad, pw, ph, H } = f;
+  const X = (c) => pad.l + c / 255 * pw, Y = (L) => H - pad.b + (Math.log10(Math.max(L, 0.01)) / 2) * ph; // log axis 0.01..1
+  axes(f, 'Camera output code (0-255)', 'True brightness (log)');
+  ctx.setLineDash([3, 4]); ctx.strokeStyle = C.grid; ctx.fillStyle = C.text; ctx.textAlign = 'right';
+  for (const L of [1, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625]) { ctx.beginPath(); ctx.moveTo(pad.l, Y(L)); ctx.lineTo(pad.l + pw, Y(L)); ctx.stroke(); ctx.fillText(L >= 0.1 ? L.toFixed(2) : L.toFixed(3), pad.l - 6, Y(L) + 4); }
+  ctx.setLineDash([]);
+  ctx.strokeStyle = C.ref2; ctx.lineWidth = 1.5; ctx.beginPath(); for (let c = 1; c <= 255; c++) { const p = [X(c), Y(srgbLin(c / 255))]; c === 1 ? ctx.moveTo(...p) : ctx.lineTo(...p); } ctx.stroke();
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); let started = false; for (const [c, L] of curve) { if (L < 0.01) continue; started ? ctx.lineTo(X(c), Y(L)) : ctx.moveTo(X(c), Y(L)); started = true; } ctx.stroke();
+  ctx.fillStyle = C.warn; for (const p of pts) { ctx.beginPath(); ctx.arc(X(p.code), Y(p.L), 5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = C.bad; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(X(blackCode), pad.t); ctx.lineTo(X(blackCode), H - pad.b); ctx.stroke(); ctx.setLineDash([]);
+  legend(f, [['Camera curve used', C.accent], ['Dither patches (mean code, known light)', C.warn], ['sRGB curve', C.ref2], ['Black patch', C.bad]]);
+}
+function drawGrey(cv, greys) {
+  const f = frame(cv); const { ctx, pad, pw, ph, H } = f;
+  const pts = greys.filter((g) => g.level >= 16).sort((a, b) => a.level - b.level);
+  const m = Math.max(8, ...pts.map((g) => Math.abs(g.balance))) * 1.2;
+  const X = (l) => pad.l + l / 255 * pw, Y = (v) => H - pad.b - (v + m) / (2 * m) * ph;
+  axes(f, 'Input code (0-255)', 'R minus B vs white (codes)');
+  ctx.strokeStyle = C.grid; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(pad.l, Y(0)); ctx.lineTo(pad.l + pw, Y(0)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.text; ctx.textAlign = 'right'; for (const v of [-m, 0, m]) ctx.fillText(v.toFixed(0), pad.l - 6, Y(v) + 4);
+  ctx.fillStyle = C.text; ctx.textAlign = 'left'; ctx.fillText('warm', pad.l + pw - 44, Y(m) + 12); ctx.fillText('cool', pad.l + pw - 40, Y(-m) - 4);
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5; ctx.beginPath(); pts.forEach((g, i) => (i ? ctx.lineTo(X(g.level), Y(g.balance)) : ctx.moveTo(X(g.level), Y(g.balance)))); ctx.stroke();
+  ctx.fillStyle = C.accent; for (const g of pts) { ctx.beginPath(); ctx.arc(X(g.level), Y(g.balance), 4, 0, Math.PI * 2); ctx.fill(); }
+}
+const LOCUS = [[0.1741, 0.005], [0.1714, 0.0051], [0.1644, 0.0109], [0.144, 0.0297], [0.1241, 0.0578], [0.0913, 0.1327], [0.0454, 0.295], [0.0082, 0.5384], [0.0139, 0.7502], [0.0743, 0.8338], [0.1547, 0.8059], [0.2296, 0.7543], [0.3016, 0.6923], [0.3731, 0.6245], [0.4441, 0.5547], [0.5125, 0.4866], [0.5752, 0.4242], [0.627, 0.3725], [0.6658, 0.334], [0.6915, 0.3083], [0.7079, 0.292], [0.719, 0.2809], [0.7347, 0.2653]];
+function drawXy(cv, colours) {
+  const f = frame(cv, { l: 50, r: 16, t: 20, b: 40 }); const { ctx, pad, pw, ph, H } = f;
+  const X = (x) => pad.l + x / 0.8 * pw, Y = (y) => H - pad.b - y / 0.9 * ph;
+  axes(f, 'x', 'y');
+  ctx.strokeStyle = C.grid; ctx.setLineDash([3, 4]); for (let i = 1; i <= 8; i++) { ctx.beginPath(); ctx.moveTo(X(i / 10), pad.t); ctx.lineTo(X(i / 10), H - pad.b); ctx.stroke(); } for (let i = 1; i <= 9; i++) { ctx.beginPath(); ctx.moveTo(pad.l, Y(i / 10)); ctx.lineTo(pad.l + pw, Y(i / 10)); ctx.stroke(); } ctx.setLineDash([]);
+  ctx.strokeStyle = '#3a4653'; ctx.lineWidth = 1.5; ctx.beginPath(); LOCUS.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)))); ctx.closePath(); ctx.stroke();
+  const tri = (g, color, label) => { ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X(g[0][0]), Y(g[0][1])); ctx.lineTo(X(g[1][0]), Y(g[1][1])); ctx.lineTo(X(g[2][0]), Y(g[2][1])); ctx.closePath(); ctx.stroke(); ctx.fillStyle = color; ctx.font = '12px IBM Plex Sans, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(label, X(g[1][0]) + 6, Y(g[1][1]) - 4); };
+  tri([[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]], C.ref, 'sRGB'); tri([[0.68, 0.32], [0.265, 0.69], [0.15, 0.06]], C.ref2, 'P3');
+  const prim = ['red', 'green', 'blue'].map((id) => colours.find((c) => c.id === id));
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); prim.forEach((p, i) => (i ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y)))); ctx.closePath(); ctx.stroke();
+  for (const c of colours) { ctx.fillStyle = `rgb(${c.rgb.join(',')})`; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(X(c.x), Y(c.y), 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  legend(f, [['Measured primaries', C.accent]]);
+}
+
+// ---------------- routing ----------------
+function route() {
+  const h = location.hash.replace('#', '');
+  $('home').hidden = h !== '' ; $('chartView').hidden = h !== 'chart'; $('measureView').hidden = h !== 'measure';
+  if (h === 'chart') { drawChart(); document.documentElement.requestFullscreen?.().catch(() => {}); }
+  else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  if (h === 'measure') requestAnimationFrame(render);
+}
+addEventListener('hashchange', route);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && location.hash === '#chart') location.hash = ''; });
+$('chartBack').onclick = () => { location.hash = ''; };
+$('analyse').onclick = analyse;
+const dpr = window.devicePixelRatio || 1;
+$('dprPill').textContent = `this screen: ${screen.width}x${screen.height} css px, ratio ${dpr}`;
+$('dprPill').className = 'pill mono ' + (Math.abs(dpr - Math.round(dpr)) < 1e-6 ? 'ok' : 'warn');
+route();
+})();
+</script>
+
+</body>
+</html>

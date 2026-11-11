@@ -9,6 +9,15 @@ Read [docs/RESEARCH.md](docs/RESEARCH.md) first: it explains what a phone can an
 relative measurements are solid on a phone with RAW + manual exposure, absolute nits are impossible without a
 reference, and colour is indicative rather than certified.
 
+## No-app option: ScreenMeter Snapshot
+
+`web/snapshot.html` is a single page that needs no app and no relay. Open it on the monitor and show the chart; the
+chart contains dither patches whose brightness is known by construction (1, ½, ¼ … 1/64 of white). Photograph it
+with the phone (Samsung Pro mode, slight defocus, locked exposure works best), load the photo on the phone, drag four
+handles onto the corner markers, and the page undoes the camera's tone curve and reports gamma, grey tracking and
+gamut. It cannot measure nits, white point, contrast or flicker; the Android app does those. The relay serves it at
+`/snapshot.html`; it is also published as a claude.ai artifact.
+
 ## Layout
 
 ```
