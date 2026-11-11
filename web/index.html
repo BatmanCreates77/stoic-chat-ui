@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScreenMeter Companion</title>
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main id="app" class="view-home">
+
+  <section id="home" class="panel">
+    <header>
+      <h1>ScreenMeter</h1>
+      <p class="sub">Pair your Android phone, go fullscreen, and let the phone drive the test patterns.</p>
+    </header>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>1. Pair</h2>
+        <p>Session code</p>
+        <div class="code" id="code">----</div>
+        <p class="muted">Relay URL for the app: <span id="relayUrl" class="mono"></span></p>
+        <p class="status"><span id="relayDot" class="dot"></span><span id="relayStatus">connecting to relay</span></p>
+        <p class="status"><span id="phoneDot" class="dot"></span><span id="phoneStatus">no phone yet</span></p>
+        <pre id="cameraInfo" class="mono small"></pre>
+      </div>
+
+      <div class="card">
+        <h2>2. Prepare</h2>
+        <ul class="tight">
+          <li>Dim the room. Ambient light leaks around the lens and lifts the black reading.</li>
+          <li>Set the monitor to its sRGB or standard picture mode. Turn off dynamic contrast, local dimming, blue-light filters and Night Light.</li>
+          <li>Disable auto-brightness on the monitor and any HDR mode in the OS.</li>
+          <li>Press the phone's main camera flat against the centre of the screen.</li>
+        </ul>
+        <p>Screen reported: <span id="screenInfo" class="mono"></span></p>
+      </div>
+
+      <div class="card">
+        <h2>3. Measure</h2>
+        <p>Enter display mode, then start from the phone or from here. Press <kbd>Esc</kbd> to leave display mode.</p>
+        <div class="row">
+          <button id="btnDisplay" class="primary">Enter display mode</button>
+          <button id="btnStartFull" disabled>Start full test</button>
+          <button id="btnStartQuick" disabled>Start quick test</button>
+        </div>
+        <p class="muted">Manual patterns (no phone needed) for a visual check: <button id="btnManual" class="link">open pattern viewer</button></p>
+      </div>
+
+      <div class="card">
+        <h2>4. Report</h2>
+        <p>Results appear below as each patch is measured and are kept in this browser.</p>
+        <div class="row">
+          <button id="btnReport" disabled>View report</button>
+          <button id="btnExport" disabled>Export JSON</button>
+          <button id="btnClear" class="danger">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <details class="card">
+      <summary>What this can and cannot measure</summary>
+      <ul>
+        <li><strong>Gamma, grey tracking, contrast ratio, uniformity, flicker:</strong> reliable in relative terms when the phone supports RAW and manual exposure.</li>
+        <li><strong>White point and gamut:</strong> uses the camera's own colour matrix. Expect a few hundred kelvin of uncertainty and treat gamut coverage as indicative.</li>
+        <li><strong>Absolute brightness in nits:</strong> not possible without a reference. Enter a known white luminance in the report to scale the numbers.</li>
+        <li><strong>Deep black:</strong> the phone's noise floor is far above a colorimeter's, so OLED contrast is reported as a lower bound.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section id="display" class="fullscreen hidden">
+    <div id="patch"></div>
+    <div id="zoneRing" class="hidden"></div>
+    <div id="hud" class="hud"></div>
+  </section>
+
+  <section id="manual" class="fullscreen hidden">
+    <div id="manualCanvasWrap"><canvas id="manualCanvas"></canvas></div>
+    <div class="hud" id="manualHud">Use ← → to change pattern, Esc to exit</div>
+  </section>
+
+  <section id="report" class="panel hidden">
+    <header class="row between">
+      <h1>Report</h1>
+      <div class="row">
+        <label class="inline">White luminance (nits, optional) <input id="nitsInput" type="number" min="1" step="1" placeholder="e.g. 250"></label>
+        <button id="btnBack">Back</button>
+      </div>
+    </header>
+    <div id="tiles" class="tiles"></div>
+    <div class="grid2">
+      <div class="card"><h2>Gamma curve</h2><canvas id="chartGamma" width="640" height="400"></canvas><p class="muted" id="gammaNote"></p></div>
+      <div class="card"><h2>Grey tracking (Δu'v' from white)</h2><canvas id="chartGrey" width="640" height="400"></canvas><p class="muted">0.0033 is roughly one just-noticeable difference. Above 0.01 is a visible tint.</p></div>
+      <div class="card"><h2>Chromaticity (CIE 1931 xy)</h2><canvas id="chartXy" width="640" height="560"></canvas><p class="muted" id="gamutNote"></p></div>
+      <div class="card"><h2>Uniformity and flicker</h2><div id="uniformity" class="uni"></div><p id="flickerNote" class="muted"></p></div>
+    </div>
+    <div class="card"><h2>Raw measurements</h2><div class="tablewrap"><table id="table"></table></div></div>
+  </section>
+
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

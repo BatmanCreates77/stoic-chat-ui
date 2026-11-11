@@ -1,0 +1,16 @@
+{
+  "name": "screenmeter-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static host for the ScreenMeter companion page plus the WebSocket relay between phone and browser.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": { "node": ">=18" }
+}
