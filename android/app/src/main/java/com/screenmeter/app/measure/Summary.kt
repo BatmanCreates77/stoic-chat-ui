@@ -5,6 +5,8 @@ import kotlin.math.ln
 
 /** Small on-device summary; the companion page does the full analysis and charts. */
 data class Summary(
+    val whiteNits: Double?,
+    val blackNits: Double?,
     val gamma: Double?,
     val contrast: Double?,
     val contrastIsLowerBound: Boolean,
@@ -35,6 +37,6 @@ object Summarizer {
         val zones = ms.filter { it.group == "uniformity" }
         val centre = zones.firstOrNull { it.zone == 5 }?.y
         val uniMin = if (centre != null && centre > 0) zones.minOf { it.y } / centre * 100.0 else null
-        return Summary(gamma, contrast, black?.atNoiseFloor == true, cct, white?.chroma?.x, white?.chroma?.y, maxDuv, flick, uniMin)
+        return Summary(white?.nits, black?.nits, gamma, contrast, black?.atNoiseFloor == true, cct, white?.chroma?.x, white?.chroma?.y, maxDuv, flick, uniMin)
     }
 }

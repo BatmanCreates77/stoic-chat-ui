@@ -105,7 +105,29 @@ Sources: [Camera2 CaptureRequest reference](https://developer.android.com/refere
    white point CCT (McCamy), grey tracking Δu'v', gamut coverage vs sRGB and P3 (polygon clipping), 9-zone uniformity
    and a flicker index.
 
-## 7. Known limits and next steps
+## 7. Absolute luminance from a camera
+
+A camera with a known f-number N, exposure time t and ISO speed S is a radiometer with a loose calibration.
+Sensor-plane illuminance from an extended source of luminance L is E = π L T / (4 N²) (T = lens transmission).
+ISO 12232 saturation-based speed defines the exposure that saturates the sensor as H_sat = 78 / S lux·s, so a RAW
+value at fraction v of full scale means H = v · 78 / S = E · t. Hence
+
+    L = 4 N² v 78 / (π T S t)   [cd/m²]
+
+Error budget, uncalibrated: ISO convention (SOS vs saturation, up to 1.4×), lens transmission and vignetting
+(±10 %), the reported f-number (nominal), panel angular emission (LCDs fall off faster than Lambertian, which makes
+the lens collect less light than the equation assumes, perhaps −10 to −25 %). One calibration against a known screen
+removes the systematic part and leaves sensor shot noise and panel non-uniformity, a few percent.
+
+Second, independent estimate: the phone's ambient light sensor. Laid face-down on a large uniform screen, the screen
+fills the sensor's hemisphere and E = π L, so nits ≈ lux / π. ALS calibration is typically ±10 to 20 % and its
+spectral response is not photopic, so treat it as a cross-check rather than a reference.
+
+Sources: ISO 12232:2019 (exposure index definitions), the exposure equation N²/t = L S / K with K ≈ 12.5
+(reflected-light meter calibration constant), and the Camera2 fields `SENSOR_SENSITIVITY`, `SENSOR_EXPOSURE_TIME`,
+`LENS_APERTURE`, `SENSOR_INFO_WHITE_LEVEL`.
+
+## 8. Known limits and next steps
 
 - No ICC profile or LUT output yet. The data needed (grey ramp, primaries, white) is all captured, so a
   DisplayCAL-style `.cal` or a 1D LUT export is a natural next step.

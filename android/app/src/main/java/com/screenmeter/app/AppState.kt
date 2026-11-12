@@ -1,6 +1,10 @@
 package com.screenmeter.app
 
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -57,6 +61,36 @@ class AppState(context: Context, private val scope: CoroutineScope) {
     private var shownWaiters = HashMap<String, CompletableDeferred<Unit>>()
     private var userContinue: CompletableDeferred<Unit>? = null
 
+    // Absolute luminance
+    var calibration by mutableStateOf(prefs.getFloat("calibration", 1f).toDouble())
+    var calibrationNote by mutableStateOf(prefs.getString("calibrationNote", "") ?: "")
+    var lux by mutableStateOf<Float?>(null)
+    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val lightSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
+    val hasLightSensor: Boolean get() = lightSensor != null
+    private val lightListener = object : SensorEventListener {
+        override fun onSensorChanged(e: SensorEvent) { lux = e.values[0] }
+        override fun onAccuracyChanged(s: Sensor?, a: Int) {}
+    }
+
+    /** Set the calibration so that the latest live reading equals [knownNits]. */
+    fun calibrateTo(knownNits: Double, note: String) {
+        val m = live ?: return
+        if (m.nits <= 0 || knownNits <= 0) return
+        val raw = m.nits / m.calibration
+        calibration = knownNits / raw
+        calibrationNote = note
+        prefs.edit().putFloat("calibration", calibration.toFloat()).putString("calibrationNote", note).apply()
+        engine?.calibration = calibration
+        statusText = "Calibrated: factor ${"%.3f".format(calibration)}"
+    }
+
+    fun resetCalibration() {
+        calibration = 1.0; calibrationNote = ""
+        prefs.edit().remove("calibration").remove("calibrationNote").apply()
+        engine?.calibration = 1.0
+    }
+
     // Live meter
     var liveRunning by mutableStateOf(false)
     var live by mutableStateOf<Measurement?>(null)
@@ -112,7 +146,7 @@ class AppState(context: Context, private val scope: CoroutineScope) {
 
     private suspend fun ensureCamera(): MeasurementEngine {
         if (!camera.isOpen) withContext(Dispatchers.Main) { camera.open() }
-        return engine ?: MeasurementEngine(camera).also { engine = it }
+        return engine ?: MeasurementEngine(camera).also { it.calibration = calibration; engine = it }
     }
 
     fun startRun(quick: Boolean) {
@@ -124,7 +158,7 @@ class AppState(context: Context, private val scope: CoroutineScope) {
         runJob = scope.launch {
             try {
                 val eng = ensureCamera()
-                relay.send(JSONObject().put("type", "run_start").put("total", patches.size).put("quick", quick))
+                relay.send(JSONObject().put("type", "run_start").put("total", patches.size).put("quick", quick).put("calibration", calibration).put("calibrationNote", calibrationNote))
                 for ((i, p) in patches.withIndex()) {
                     if (!isActive) break
                     progress = i to patches.size
@@ -186,15 +220,16 @@ class AppState(context: Context, private val scope: CoroutineScope) {
     fun cancelRun() { runJob?.cancel(); running = false; waitingForUser = null; statusText = "Cancelled" }
 
     fun toggleLive() {
-        if (liveRunning) { liveJob?.cancel(); liveRunning = false; return }
+        if (liveRunning) { liveJob?.cancel(); liveRunning = false; sensorManager.unregisterListener(lightListener); return }
         liveRunning = true; screen = Screen.Live
+        lightSensor?.let { sensorManager.registerListener(lightListener, it, SensorManager.SENSOR_DELAY_UI) }
         liveJob = scope.launch {
             try {
                 val eng = ensureCamera()
                 while (isActive) {
                     val m = withContext(Dispatchers.Default) { eng.readLive() }
                     live = m
-                    if (relay.connected) relay.send(m.toJson().put("type", "live"))
+                    if (relay.connected) relay.send(m.toJson().put("type", "live").apply { lux?.let { put("lux", it) } })
                     delay(150)
                 }
             } catch (e: Exception) {
@@ -206,5 +241,5 @@ class AppState(context: Context, private val scope: CoroutineScope) {
 
     fun setLiveReference() { liveReference = live }
 
-    fun release() { runJob?.cancel(); liveJob?.cancel(); camera.close(); relay.disconnect() }
+    fun release() { runJob?.cancel(); liveJob?.cancel(); sensorManager.unregisterListener(lightListener); camera.close(); relay.disconnect() }
 }

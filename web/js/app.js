@@ -65,7 +65,7 @@ function onMessage(m) {
     case 'measure': state.measurements.push(m); saveMeasurements(); hud(`${m.id}: Y ${fmt(m.Y, 3)} x ${fmt(m.x, 3)} y ${fmt(m.y_, 3)}`); updateReportButtons(); break;
     case 'run_done': state.running = false; setPhone(true); hud('Run complete. Press Esc to see the report.'); updateReportButtons(); break;
     case 'status': hud(m.text); break;
-    case 'live': hud(`live Y ${fmt(m.Y, 4)}  x ${fmt(m.x, 3)}  y ${fmt(m.y_, 3)}`); break;
+    case 'live': hud(`live ${fmt(m.nits, 1)} nits  x ${fmt(m.x, 3)}  y ${fmt(m.y_, 3)}${m.lux != null ? `  light sensor ${fmt(m.lux, 0)} lux` : ''}`); break;
   }
 }
 
@@ -136,6 +136,8 @@ function renderReport() {
   const s = summarize(state.measurements, nits);
   const tiles = [];
   const tile = (k, v, n, cls = '') => tiles.push(`<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${n}</div></div>`);
+  if (s.nits) tile('White luminance', `${s.nits.white.toFixed(0)} nits`, s.nits.source === 'entered' ? 'from the value you entered' : s.nits.calibration === 1 ? 'phone exposure equation, uncalibrated (±35 %)' : `phone, calibrated ×${s.nits.calibration.toFixed(3)}`, 'good');
+  if (s.nits && s.nits.black != null) tile('Black luminance', `${s.nits.black.toFixed(3)} nits`, s.contrastLowerBound ? 'at camera noise floor, true value is lower' : 'scaled from white', s.nits.black < 0.5 ? 'good' : 'warn');
   if (s.gamma != null) tile('Gamma', s.gamma.toFixed(2), 'target 2.2 (sRGB ≈ 2.2)', Math.abs(s.gamma - 2.2) < 0.1 ? 'good' : Math.abs(s.gamma - 2.2) < 0.25 ? 'warn' : 'bad');
   if (s.contrast != null) tile('Contrast', `${s.contrastLowerBound ? '>' : ''}${Math.round(s.contrast)}:1`, s.contrastLowerBound ? 'black at camera noise floor' : 'white / black', s.contrast > 800 ? 'good' : 'warn');
   if (s.white) tile('White point', `${Math.round(s.white.cct)} K`, `x ${s.white.x.toFixed(4)} y ${s.white.y.toFixed(4)}, Δu'v' ${s.white.duvFromD65.toFixed(4)} from D65`, s.white.duvFromD65 < 0.006 ? 'good' : s.white.duvFromD65 < 0.012 ? 'warn' : 'bad');
@@ -143,7 +145,6 @@ function renderReport() {
   if (s.gamut) tile('sRGB coverage', `${Math.round(s.gamut.srgb.coverage * 100)}%`, `P3 ${Math.round(s.gamut.p3.coverage * 100)}%, area ${Math.round(s.gamut.srgb.areaRatio * 100)}% of sRGB`, s.gamut.srgb.coverage > 0.95 ? 'good' : 'warn');
   if (s.flickerIndex != null) tile('Flicker', s.flickerIndex.toFixed(3), s.flickerIndex > 0.05 ? 'PWM dimming likely' : 'flicker-free at this brightness', s.flickerIndex > 0.05 ? 'warn' : 'good');
   if (s.uniformity) { const mn = Math.min(...s.uniformity.filter((v) => v != null)); tile('Uniformity', `${Math.round(mn * 100)}%`, 'darkest zone vs centre', mn > 0.9 ? 'good' : mn > 0.8 ? 'warn' : 'bad'); }
-  if (s.nits) tile('Black level', s.nits.black != null ? `${s.nits.black.toFixed(3)} nits` : 'n/a', `scaled from ${s.nits.white} nits white`);
   if (s.isRaw === false) tile('Caution', 'YUV', 'phone had no RAW: values are approximate', 'bad');
   $('tiles').innerHTML = tiles.join('') || '<p class="muted">No measurements yet.</p>';
 
@@ -159,8 +160,8 @@ function renderReport() {
   else uni.innerHTML = '<p class="muted" style="grid-column: span 3">Uniformity not run. Tick the option in the app before a full test.</p>';
   $('flickerNote').textContent = s.flickerIndex != null ? `Flicker index ${s.flickerIndex.toFixed(3)} (frame spread or row banding at ~1 ms exposure). Row modulation ${fmt(s.rowModulation, 3)}. Values above 0.05 suggest PWM dimming at the current brightness.` : '';
 
-  const rows = state.measurements.map((m) => `<tr><td><span class="sw" style="background: rgb(${m.rgb.join(',')})"></span>${m.id}</td><td>${m.group}</td><td>${fmt(m.Y, 5)}</td><td>${fmt(m.x, 4)}</td><td>${fmt(m.y_, 4)}</td><td>${m.exposureNs >= 1e6 ? (m.exposureNs / 1e6).toFixed(2) + ' ms' : (m.exposureNs / 1e3).toFixed(0) + ' us'}</td><td>${m.iso}</td><td>${m.frames}</td><td>${fmt(m.snr, 0)}</td><td>${m.saturated ? 'clip' : ''}${m.atNoiseFloor ? ' noise' : ''}${m.isRaw ? '' : ' yuv'}</td></tr>`);
-  $('table').innerHTML = `<tr><th>Patch</th><th>Group</th><th>Y rel</th><th>x</th><th>y</th><th>Exposure</th><th>ISO</th><th>Frames</th><th>SNR</th><th>Flags</th></tr>${rows.join('')}`;
+  const rows = state.measurements.map((m) => `<tr><td><span class="sw" style="background: rgb(${m.rgb.join(',')})"></span>${m.id}</td><td>${m.group}</td><td>${m.nits != null ? fmt(m.nits, m.nits < 10 ? 3 : 1) : '-'}</td><td>${fmt(m.Y, 5)}</td><td>${fmt(m.x, 4)}</td><td>${fmt(m.y_, 4)}</td><td>${m.exposureNs >= 1e6 ? (m.exposureNs / 1e6).toFixed(2) + ' ms' : (m.exposureNs / 1e3).toFixed(0) + ' us'}</td><td>${m.iso}</td><td>${m.frames}</td><td>${fmt(m.snr, 0)}</td><td>${m.saturated ? 'clip' : ''}${m.atNoiseFloor ? ' noise' : ''}${m.isRaw ? '' : ' yuv'}</td></tr>`);
+  $('table').innerHTML = `<tr><th>Patch</th><th>Group</th><th>nits</th><th>Y rel</th><th>x</th><th>y</th><th>Exposure</th><th>ISO</th><th>Frames</th><th>SNR</th><th>Flags</th></tr>${rows.join('')}`;
 }
 
 // ---------- storage ----------

@@ -9,6 +9,20 @@ Read [docs/RESEARCH.md](docs/RESEARCH.md) first: it explains what a phone can an
 relative measurements are solid on a phone with RAW + manual exposure, absolute nits are impossible without a
 reference, and colour is indicative rather than certified.
 
+## Absolute brightness (nits)
+
+The app reports cd/m² for every patch and in the live meter. It comes from the photographic exposure equation applied
+to RAW data at a known shutter time, ISO and f-number:
+
+```
+L = 4 · N² · v · 78 / (π · T · S · t)      v = fraction of sensor full scale, T = lens transmission (0.9)
+```
+
+Uncalibrated this is good to roughly ±35 %, because Android does not say which ISO 12232 convention the vendor used and
+panels are not perfectly Lambertian. On the live-meter screen you can calibrate once against any screen of known
+luminance; the factor is stored and applied to all later readings. The same screen also shows the phone's ambient
+light sensor: laid face-down on a large white area, lux ÷ π is an independent nits estimate to cross-check the camera.
+
 ## No-app option: ScreenMeter Snapshot
 
 `web/snapshot.html` is a single page that needs no app and no relay. Open it on the monitor and show the chart; the

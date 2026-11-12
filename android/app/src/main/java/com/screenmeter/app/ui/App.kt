@@ -33,6 +33,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -111,7 +116,7 @@ private fun HomeScreen(state: AppState, hasPermission: Boolean, requestPermissio
                         Button(enabled = hasPermission && state.displayPresent && !state.running, onClick = { state.startRun(false) }) { Text("Full test") }
                         OutlinedButton(enabled = hasPermission && state.displayPresent && !state.running, onClick = { state.startRun(true) }) { Text("Quick test") }
                     }
-                    OutlinedButton(enabled = hasPermission, onClick = { state.toggleLive() }) { Text("Live meter (any app or site)") }
+                    Button(enabled = hasPermission, onClick = { state.toggleLive() }) { Text("Luminance meter (nits)") }
                     if (state.statusText.isNotBlank()) Text(state.statusText, style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -169,6 +174,8 @@ private fun RunScreen(state: AppState) {
             state.summary?.let { s ->
                 Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Summary", style = MaterialTheme.typography.titleMedium)
+                    KV("White", s.whiteNits?.let { "${fmt(it, 0)} nits" } ?: "n/a")
+                    KV("Black", s.blackNits?.let { "${fmt(it, 3)} nits" + if (s.contrastIsLowerBound) " (noise floor)" else "" } ?: "n/a")
                     KV("Gamma", s.gamma?.let { fmt(it, 2) } ?: "n/a")
                     KV("Contrast", s.contrast?.let { (if (s.contrastIsLowerBound) "> " else "") + "${fmt(it, 0)}:1" } ?: "n/a")
                     KV("White point", if (s.whiteX != null) "x ${fmt(s.whiteX, 4)}  y ${fmt(s.whiteY!!, 4)}  ~${fmt(s.whiteCct!!, 0)} K" else "n/a")
@@ -194,7 +201,7 @@ private fun MeasurementRow(m: Measurement) {
         Box(Modifier.size(18.dp).background(Color(m.rgbIn[0].coerceAtLeast(0), m.rgbIn[1].coerceAtLeast(0), m.rgbIn[2].coerceAtLeast(0)), CircleShape))
         Spacer(Modifier.width(8.dp))
         Text(m.patchId, Modifier.width(90.dp), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-        Text("Y ${fmt(m.y, 3)}  x ${fmt(m.chroma.x, 3)} y ${fmt(m.chroma.y, 3)}  ${fmtNs(m.exposureNs)}" +
+        Text("${fmt(m.nits, if (m.nits < 10) 2 else 0)} nits  x ${fmt(m.chroma.x, 3)} y ${fmt(m.chroma.y, 3)}  ${fmtNs(m.exposureNs)}" +
             (if (m.saturated) " CLIP" else "") + (if (m.atNoiseFloor) " noise" else "") + (m.flickerIndex?.let { " flicker ${fmt(it, 3)}" } ?: ""),
             fontFamily = FontFamily.Monospace, fontSize = 11.sp)
     }
@@ -204,29 +211,49 @@ private fun MeasurementRow(m: Measurement) {
 @Composable
 private fun LiveScreen(state: AppState) {
     BackHandler { if (state.liveRunning) state.toggleLive(); state.screen = Screen.Home }
-    Scaffold(topBar = { TopAppBar(title = { Text("Live meter") }) }) { pad ->
-        Column(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Hold the camera against any screen content: a website, a game, a video. Values are relative to the phone sensor, not nits. Tap \"Set as reference\" on full white to read everything else as a percentage.", style = MaterialTheme.typography.bodySmall)
+    var knownNits by remember { mutableStateOf("") }
+    Scaffold(topBar = { TopAppBar(title = { Text("Luminance meter") }) }) { pad ->
+        Column(Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Press the main camera flat against the screen area you want to measure: a white patch, a website, a game. Room lights off.", style = MaterialTheme.typography.bodySmall)
             val m = state.live
             val ref = state.liveReference
             Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (m == null) Text("Waiting for first reading") else {
-                    val pct = if (ref != null && ref.y > 0) m.y / ref.y * 100 else null
-                    Text(if (pct != null) "${fmt(pct, 1)} % of reference" else "Y ${fmt(m.y, 4)} (relative)", fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                    KV("Chromaticity", "x ${fmt(m.chroma.x, 4)}  y ${fmt(m.chroma.y, 4)}")
-                    KV("CCT", "~${fmt(ColorMath.cct(m.chroma.x, m.chroma.y), 0)} K")
-                    if (ref != null) KV("du'v' vs ref", fmt(ColorMath.deltaUv(m.chroma, ref.chroma), 4))
-                    KV("Exposure", "${fmtNs(m.exposureNs)} @ ISO ${m.iso}")
+                    Text("${fmt(m.nits, if (m.nits < 10) 2 else 0)} nits", fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Scheme.primary)
+                    Text(if (state.calibration == 1.0) "Uncalibrated: expect about ±35 %. Calibrate once below." else "Calibrated ×${fmt(state.calibration, 3)}" + (if (state.calibrationNote.isNotBlank()) " (${state.calibrationNote})" else ""), style = MaterialTheme.typography.bodySmall, color = Scheme.secondary)
+                    if (ref != null && ref.nits > 0) KV("vs reference", "${fmt(m.nits / ref.nits * 100, 1)} %  du'v' ${fmt(ColorMath.deltaUv(m.chroma, ref.chroma), 4)}")
+                    KV("Chromaticity", "x ${fmt(m.chroma.x, 4)}  y ${fmt(m.chroma.y, 4)}  ~${fmt(ColorMath.cct(m.chroma.x, m.chroma.y), 0)} K")
+                    KV("Exposure", "${fmtNs(m.exposureNs)}  ISO ${m.iso}  f/${fmt(m.aperture, 1)}")
+                    KV("Signal", "${fmt(m.camRgb[1] * m.exposureNs / 1e9 * m.iso / 100 * 100, 1)} % of sensor full scale")
                     KV("Row banding", fmt(m.rowModulation, 3))
-                    if (m.saturated) Text("Clipping: too bright for the shortest exposure", color = Scheme.error)
-                    if (!m.isRaw) Text("YUV fallback: tone-mapped by the phone, approximate", color = Scheme.error)
+                    if (m.saturated) Text("Clipping: too bright even at the shortest exposure", color = Scheme.error)
+                    if (!m.isRaw) Text("YUV fallback: tone-mapped by the phone, nits are rough", color = Scheme.error)
                 }
             } }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { state.toggleLive() }) { Text(if (state.liveRunning) "Stop" else "Start") }
-                OutlinedButton(enabled = m != null, onClick = { state.setLiveReference() }) { Text("Set as reference") }
+                OutlinedButton(enabled = m != null, onClick = { state.setLiveReference() }) { Text("Set reference") }
                 OutlinedButton(onClick = { if (state.liveRunning) state.toggleLive(); state.screen = Screen.Home }) { Text("Back") }
             }
+            Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Cross-check with the light sensor", style = MaterialTheme.typography.titleMedium)
+                if (!state.hasLightSensor) Text("This phone reports no ambient light sensor.", style = MaterialTheme.typography.bodySmall)
+                else {
+                    val lux = state.lux
+                    Text(if (lux == null) "No reading yet" else "${fmt(lux.toDouble(), 0)} lux  →  ${fmt(lux / Math.PI, 0)} nits", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Flip the phone and lay its top edge face-down on a large white area so the sensor (under the display, near the top) sees only the screen. A screen that fills the sensor's view gives lux = π × nits. The front camera must not be covered by your hand.", style = MaterialTheme.typography.bodySmall)
+                }
+            } }
+            Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Calibrate once", style = MaterialTheme.typography.titleMedium)
+                Text("Point the camera at a screen whose white luminance you know (a monitor you measured with a real meter, or a laptop at 100 % brightness with a published spec), wait for a steady reading, enter the value.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = knownNits, onValueChange = { knownNits = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Known nits of what the camera sees now") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(enabled = m != null && knownNits.toDoubleOrNull() != null, onClick = { state.calibrateTo(knownNits.toDouble(), "ref ${knownNits} nits") }) { Text("Apply") }
+                    OutlinedButton(enabled = state.calibration != 1.0, onClick = { state.resetCalibration() }) { Text("Reset to first principles") }
+                }
+            } }
             if (state.statusText.isNotBlank()) Text(state.statusText, style = MaterialTheme.typography.bodySmall)
         }
     }

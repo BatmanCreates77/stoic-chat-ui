@@ -36,6 +36,10 @@ data class Measurement(
     val flickerIndex: Double?,    // only for the flicker patch
     val isRaw: Boolean,
     val frames: Int,
+    /** Absolute luminance estimate in cd/m2 from the exposure equation (see [MeasurementEngine.nitsFrom]). */
+    val nits: Double,
+    val aperture: Double,
+    val calibration: Double,
 ) {
     val y: Double get() = xyz[1]
 
@@ -52,10 +56,40 @@ data class Measurement(
         put("rowModulation", rowModulation)
         if (flickerIndex != null) put("flickerIndex", flickerIndex)
         put("isRaw", isRaw); put("frames", frames)
+        put("nits", nits); put("aperture", aperture); put("calibration", calibration)
     }
 }
 
 class MeasurementEngine(private val camera: CameraController) {
+
+    /**
+     * User calibration factor applied to every nits value. 1.0 = first principles only.
+     * Set it by measuring a screen of known luminance once; it then corrects for this phone's
+     * lens transmission, ISO convention and sensor tolerances together.
+     */
+    @Volatile var calibration: Double = 1.0
+
+    private val aperture: Double by lazy {
+        camera.characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_APERTURES)?.firstOrNull()?.toDouble() ?: 1.8
+    }
+
+    /**
+     * Luminance from the photographic exposure equation.
+     *
+     * Sensor-plane illuminance for an extended source of luminance L seen through a lens of
+     * f-number N and transmission T is E = pi * L * T / (4 N^2). Saturation-based ISO speed
+     * (ISO 12232) defines the exposure that just saturates the sensor as H_sat = 78 / S lux*s,
+     * so a pixel at fraction v of full scale received H = v * 78 / S = E * t. Solving for L:
+     *   L = 4 N^2 * v * 78 / (pi * T * S * t)
+     * [greenNorm] is v / (t * S / 100), the exposure-normalised value this engine already keeps.
+     * Lens transmission is taken as 0.9. Expect +-35 % uncalibrated: Android does not say which
+     * ISO 12232 convention a vendor used (SOS vs saturation differ by ~1.4x) and panels are not
+     * perfectly Lambertian. One calibration against a known screen removes most of that.
+     */
+    fun nitsFrom(greenNorm: Double, apertureN: Double = aperture): Double {
+        val t = 0.9
+        return greenNorm / 100.0 * (4.0 * apertureN * apertureN * 78.0) / (Math.PI * t) * calibration
+    }
 
     /** Matrix taking exposure-normalised camera RGB to CIE XYZ. */
     private val camToXyz: Mat3 by lazy {
@@ -94,9 +128,13 @@ class MeasurementEngine(private val camera: CameraController) {
      * Auto-ranging exposure: aim for the green channel between 15% and 70% of full scale with no
      * clipping, keeping ISO at its minimum so the signal stays linear and noise low.
      */
+    private var lastResult: CaptureResult? = null
+
     private suspend fun rangeExposure(startNs: Long): Pair<RawStats, Long> {
         var exp = startNs.coerceIn(minExp, maxExp)
-        var stats: RawStats = shoot(exp, baseIso).first
+        var shot = shoot(exp, baseIso)
+        var stats: RawStats = shot.first
+        lastResult = shot.second
         for (i in 0 until 7) {
             val g = stats.green
             val next = when {
@@ -108,7 +146,9 @@ class MeasurementEngine(private val camera: CameraController) {
             }.coerceIn(minExp, maxExp)
             if (next == exp) break
             exp = next
-            stats = shoot(exp, baseIso).first
+            shot = shoot(exp, baseIso)
+            stats = shot.first
+            lastResult = shot.second
         }
         return stats to exp
     }
@@ -121,6 +161,7 @@ class MeasurementEngine(private val camera: CameraController) {
 
     suspend fun measure(patch: Patch): Measurement {
         val (first, exp) = rangeExposure(lastExposure)
+        val firstResult = lastResult
         lastExposure = exp
         val iso = baseIso
 
@@ -148,11 +189,15 @@ class MeasurementEngine(private val camera: CameraController) {
         val snr = if (gStd > 0) first.mean[1] / gStd else Double.POSITIVE_INFINITY
         val noiseFloor = first.mean[1] < 3 * first.std[1] / Math.sqrt(max(1, first.count[1]).toDouble()) || first.mean[1] <= 0.0
 
+        val n = resultAperture(firstResult) ?: aperture
         return Measurement(
             patch.id, patch.group, patch.zone, intArrayOf(patch.r, patch.g, patch.b),
             acc, xyz, chroma, exp, iso, satur, noiseFloor, snr, rowMod, null, first.isRaw, frames,
+            nitsFrom(acc[1], n), n, calibration,
         )
     }
+
+    private fun resultAperture(r: CaptureResult?): Double? = r?.get(CaptureResult.LENS_APERTURE)?.toDouble()
 
     /**
      * Flicker test: short exposures sample different phases of a PWM backlight. Both the spread of
@@ -178,6 +223,7 @@ class MeasurementEngine(private val camera: CameraController) {
         return Measurement(
             patch.id, patch.group, patch.zone, intArrayOf(patch.r, patch.g, patch.b),
             norm, xyz, ColorMath.chromaticity(xyz), shortExp, iso, false, false, 0.0, rowMod, flicker, ranged.isRaw, patch.repeats,
+            nitsFrom(norm[1]), aperture, calibration,
         )
     }
 
@@ -187,9 +233,11 @@ class MeasurementEngine(private val camera: CameraController) {
         lastExposure = exp
         val norm = normalise(stats, exp, baseIso)
         val xyz = camToXyz * norm
+        val n = resultAperture(lastResult) ?: aperture
         return Measurement(
             "live", "live", 0, intArrayOf(-1, -1, -1), norm, xyz, ColorMath.chromaticity(xyz), exp, baseIso,
             stats.maxFraction > 0.95, stats.mean[1] <= 0.0, 0.0, stats.rowModulation, null, stats.isRaw, 1,
+            nitsFrom(norm[1], n), n, calibration,
         )
     }
 }

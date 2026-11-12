@@ -66,7 +66,9 @@ export function summarize(ms, nitsWhite) {
   const byId = Object.fromEntries(ms.map((m) => [m.id, m]));
   const white = byId.white, black = byId.black;
   const wy = white?.Y || 0;
-  const scale = nitsWhite && wy > 0 ? nitsWhite / wy : null;
+  // Absolute scale: a user-entered white luminance wins, else the phone's own exposure-equation nits.
+  const phoneNits = white && white.nits > 0 ? white.nits : null;
+  const scale = nitsWhite && wy > 0 ? nitsWhite / wy : phoneNits && wy > 0 ? phoneNits / wy : null;
 
   const greys = ms.filter((m) => m.group === 'grey' && !m.saturated && !m.atNoiseFloor && wy > 0 && m.Y > 0);
   const gammaPoints = greys.map((m) => ({ level: m.rgb[0], rel: m.Y / wy, srgb: srgbToLinear(m.rgb[0] / 255), g22: (m.rgb[0] / 255) ** 2.2 }));
@@ -102,7 +104,7 @@ export function summarize(ms, nitsWhite) {
     greyTracking, maxDuv, primaries, gamut, uniformity,
     flickerIndex: flick ? flick.flickerIndex : null,
     rowModulation: flick ? flick.rowModulation : null,
-    nits: scale ? { white: nitsWhite, black: black ? black.Y * scale : null, scale } : null,
+    nits: scale ? { white: nitsWhite || phoneNits, black: black ? black.Y * scale : null, scale, source: nitsWhite ? 'entered' : 'phone', calibration: white?.calibration ?? 1 } : null,
     isRaw: ms.length ? ms.every((m) => m.isRaw) : null,
   };
 }
