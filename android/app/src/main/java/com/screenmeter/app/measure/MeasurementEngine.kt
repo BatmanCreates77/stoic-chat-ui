@@ -86,10 +86,7 @@ class MeasurementEngine(private val camera: CameraController) {
      * ISO 12232 convention a vendor used (SOS vs saturation differ by ~1.4x) and panels are not
      * perfectly Lambertian. One calibration against a known screen removes most of that.
      */
-    fun nitsFrom(greenNorm: Double, apertureN: Double = aperture): Double {
-        val t = 0.9
-        return greenNorm / 100.0 * (4.0 * apertureN * apertureN * 78.0) / (Math.PI * t) * calibration
-    }
+    fun nitsFrom(greenNorm: Double, apertureN: Double = aperture): Double = Luminance.nits(greenNorm, apertureN, calibration)
 
     /** Matrix taking exposure-normalised camera RGB to CIE XYZ. */
     private val camToXyz: Mat3 by lazy {

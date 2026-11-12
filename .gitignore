@@ -13,3 +13,8 @@ node_modules/
 .sdk-install/
 # OS
 .DS_Store
+
+# Local signing keys never go in git
+android/keystore/
+*.jks
+*.keystore

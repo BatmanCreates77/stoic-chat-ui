@@ -47,8 +47,11 @@ docs/      Research notes
    ```bash
    cd server && npm install && npm start      # http://<your-ip>:8787
    ```
-2. **Phone app**: open `android/` in Android Studio or run `./gradlew :app:assembleDebug`, install
-   `app/build/outputs/apk/debug/app-debug.apk`. The CI workflow also uploads the APK as an artifact.
+2. **Phone app**: run `android/build-apk.sh` (clean build, unit tests, release APK, ZIP and signature check) and
+   install `android/app/build/outputs/apk/release/app-release.apk`. The CI workflow does the same and uploads the APK.
+   Builds are signed with the machine's own Android debug key; installing an APK from a different machine over an
+   existing one needs an uninstall first. On a Galaxy S24 series phone, turn off **Settings → Security and privacy →
+   Auto Blocker** before sideloading, or Android refuses every APK with a generic "App not installed" message.
 3. Open the page on the monitor you want to test, note the 5-character code, enter the relay URL and code in the app,
    tap **Connect**.
 4. Dim the room, put the monitor in its sRGB/standard mode, disable dynamic contrast and Night Light.

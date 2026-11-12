@@ -24,8 +24,13 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: android-actions/setup-android@v3
-      - run: cd android && chmod +x gradlew && ./gradlew :app:assembleDebug --no-daemon
+      - run: cd android && chmod +x gradlew && ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon
+      - name: Verify the APK is a valid, signed package
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          unzip -tq "$APK"
+          "$ANDROID_HOME"/build-tools/35.0.0/apksigner verify --verbose "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: screenmeter-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: screenmeter-apk
+          path: android/app/build/outputs/apk/release/app-release.apk

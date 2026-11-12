@@ -71,9 +71,11 @@ class CameraController(context: Context) {
         val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
         val format = if (raw && map?.getOutputSizes(ImageFormat.RAW_SENSOR)?.isNotEmpty() == true)
             ImageFormat.RAW_SENSOR else ImageFormat.YUV_420_888
-        val sizes = map?.getOutputSizes(format) ?: arrayOf(Size(640, 480))
-        val size = if (format == ImageFormat.RAW_SENSOR) sizes.maxByOrNull { it.width.toLong() * it.height }!!
-        else sizes.filter { it.width <= 1920 }.maxByOrNull { it.width.toLong() * it.height } ?: sizes.first()
+        val sizes = (map?.getOutputSizes(format) ?: arrayOf(Size(640, 480))).toList()
+        // We only read a centre region, so the smallest usable size wins: a 200 MP RAW frame is
+        // 400 MB per buffer and would exhaust memory, while a 12 MP binned frame is plenty.
+        val size = sizes.filter { it.width >= 1600 }.minByOrNull { it.width.toLong() * it.height }
+            ?: sizes.maxByOrNull { it.width.toLong() * it.height }!!
         val cfa = when (chars.get(CameraCharacteristics.SENSOR_INFO_COLOR_FILTER_ARRANGEMENT)) {
             CameraCharacteristics.SENSOR_INFO_COLOR_FILTER_ARRANGEMENT_RGGB -> "RGGB"
             CameraCharacteristics.SENSOR_INFO_COLOR_FILTER_ARRANGEMENT_GRBG -> "GRBG"
@@ -124,7 +126,7 @@ class CameraController(context: Context) {
             }, handler)
         }
         device = dev
-        val rdr = ImageReader.newInstance(capabilities.outputSize.width, capabilities.outputSize.height, capabilities.outputFormat, 4)
+        val rdr = ImageReader.newInstance(capabilities.outputSize.width, capabilities.outputSize.height, capabilities.outputFormat, 2)
         reader = rdr
         @Suppress("DEPRECATION")
         session = suspendCancellableCoroutine { cont ->
@@ -148,7 +150,9 @@ class CameraController(context: Context) {
         b.addTarget(rdr.surface)
         val caps = capabilities
         if (caps.supportsManualSensor) {
-            b.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF)
+            // Keep CONTROL_MODE_AUTO and switch the individual 3A blocks off: several HALs reject
+            // or misbehave with CONTROL_MODE_OFF, while this combination is what Camera ITS tests.
+            b.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
             b.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
             b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureNs.coerceIn(caps.exposureRangeNs?.lower ?: exposureNs, caps.exposureRangeNs?.upper ?: exposureNs))
@@ -182,7 +186,7 @@ class CameraController(context: Context) {
             }
             rdr.setOnImageAvailableListener({ r ->
                 val img = r.acquireLatestImage() ?: return@setOnImageAvailableListener
-                if (image != null) image?.close()
+                image?.close()
                 image = img
                 deliver()
             }, handler)

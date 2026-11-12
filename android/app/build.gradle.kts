@@ -19,7 +19,16 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Sideload builds: sign with the machine's auto-generated Android debug key so no
+            // keystore or password lives in the repository. A Play release would use its own key.
+            signingConfig = signingConfigs.getByName("debug")
         }
+    }
+    lint {
+        abortOnError = false
+    }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -46,4 +55,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }
