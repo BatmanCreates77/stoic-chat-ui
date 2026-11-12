@@ -31,6 +31,15 @@ state.code = (params.get('code') || sessionStorage.getItem('screenmeter.code') |
 sessionStorage.setItem('screenmeter.code', state.code);
 $('code').textContent = state.code;
 $('relayUrl').textContent = location.origin;
+// When the phone itself serves this page there is nothing to pair: the app is already on the other end.
+fetch('/api/health').then((r) => r.json()).then((h) => {
+  if (h && h.mode === 'phone') {
+    state.phoneHosted = true;
+    $('code').textContent = 'direct';
+    $('code').style.fontSize = '28px';
+    $('relayUrl').parentElement.textContent = 'Served by the phone app over Wi-Fi. No code needed.';
+  }
+}).catch(() => {});
 $('screenInfo').textContent = `${screen.width}x${screen.height} css px, dpr ${devicePixelRatio}, ${screen.colorDepth}-bit`;
 
 // ---------- websocket ----------

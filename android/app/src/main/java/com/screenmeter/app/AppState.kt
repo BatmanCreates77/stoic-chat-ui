@@ -18,6 +18,7 @@ import com.screenmeter.app.measure.Patch
 import com.screenmeter.app.measure.Summarizer
 import com.screenmeter.app.measure.Summary
 import com.screenmeter.app.measure.TestSuite
+import com.screenmeter.app.sync.LocalServer
 import com.screenmeter.app.sync.RelayClient
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -42,9 +43,14 @@ class AppState(context: Context, private val scope: CoroutineScope) {
     var screen by mutableStateOf(Screen.Home)
     var capabilities by mutableStateOf<CameraCapabilities?>(null)
     var cameraError by mutableStateOf<String?>(null)
-    var relayUrl by mutableStateOf(prefs.getString("relayUrl", "http://192.168.1.10:8787") ?: "")
+    var useRemoteRelay by mutableStateOf(false)
+    var relayUrl by mutableStateOf(prefs.getString("relayUrl", "") ?: "")
     var code by mutableStateOf(prefs.getString("code", "") ?: "")
     var relayState by mutableStateOf("disconnected")
+    var serverAddresses by mutableStateOf<List<String>>(emptyList())
+    var serverState by mutableStateOf("starting")
+    private val appContext = context.applicationContext
+    private var localServer: LocalServer? = null
     var displayPresent by mutableStateOf(false)
     var displayInfo by mutableStateOf("")
     var includeUniformity by mutableStateOf(false)
@@ -126,6 +132,7 @@ class AppState(context: Context, private val scope: CoroutineScope) {
                 displayPresent = true
                 val s = msg.optJSONObject("screen")
                 displayInfo = if (s != null) "${s.optInt("w")}x${s.optInt("h")} @${s.optDouble("dpr", 1.0)}x" else ""
+                send(JSONObject().put("type", "hello").put("role", "meter").put("device", "${Build.MANUFACTURER} ${Build.MODEL}"))
                 sendCameraInfo()
             }
             "peer_left" -> if (msg.optString("role") == "display") displayPresent = false
@@ -135,9 +142,34 @@ class AppState(context: Context, private val scope: CoroutineScope) {
         }
     }
 
+    /** Send to whichever transport is active: the phone-hosted page server, or the optional remote relay. */
+    private fun send(obj: JSONObject): Boolean =
+        if (useRemoteRelay) relay.send(obj) else (localServer?.send(obj) ?: false)
+
+    fun startLocalServer() {
+        if (localServer != null) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                val server = LocalServer({ path -> appContext.assets.open(path) }, LocalServer.DEFAULT_PORT,
+                    onMessage = { m -> scope.launch(Dispatchers.Main) { onRelayMessage(m) } },
+                    onDisplays = { n -> scope.launch(Dispatchers.Main) { if (n == 0) displayPresent = false } })
+                server.startServer()
+                localServer = server
+                withContext(Dispatchers.Main) {
+                    serverAddresses = LocalServer.localAddresses()
+                    serverState = if (serverAddresses.isEmpty()) "running, but no Wi-Fi address found: join a Wi-Fi network or start a hotspot" else "running"
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { serverState = "could not start: ${e.message}" }
+            }
+        }
+    }
+
+    fun refreshAddresses() { serverAddresses = LocalServer.localAddresses() }
+
     private fun sendCameraInfo() {
         val c = capabilities ?: return
-        relay.send(JSONObject().put("type", "camera").put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
+        send(JSONObject().put("type", "camera").put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
             .put("raw", c.supportsRaw).put("manual", c.supportsManualSensor).put("cfa", c.cfaName)
             .put("format", c.formatName).put("colorMatrix", c.hasColorMatrices)
             .put("exposureMin", c.exposureRangeNs?.lower ?: -1).put("exposureMax", c.exposureRangeNs?.upper ?: -1)
@@ -158,7 +190,7 @@ class AppState(context: Context, private val scope: CoroutineScope) {
         runJob = scope.launch {
             try {
                 val eng = ensureCamera()
-                relay.send(JSONObject().put("type", "run_start").put("total", patches.size).put("quick", quick).put("calibration", calibration).put("calibrationNote", calibrationNote))
+                send(JSONObject().put("type", "run_start").put("total", patches.size).put("quick", quick).put("calibration", calibration).put("calibrationNote", calibrationNote))
                 for ((i, p) in patches.withIndex()) {
                     if (!isActive) break
                     progress = i to patches.size
@@ -174,18 +206,18 @@ class AppState(context: Context, private val scope: CoroutineScope) {
                     statusText = "Measuring ${p.label}"
                     val m = withContext(Dispatchers.Default) { eng.measure(p) }
                     measurements += m
-                    relay.send(m.toJson())
+                    send(m.toJson())
                 }
                 progress = patches.size to patches.size
                 summary = Summarizer.summarize(measurements)
-                relay.send(JSONObject().put("type", "run_done").put("count", measurements.size))
+                send(JSONObject().put("type", "run_done").put("count", measurements.size))
                 statusText = "Done. Full report is on the companion page."
             } catch (e: Exception) {
                 statusText = "Stopped: ${e.message ?: e.toString()}"
-                relay.send(JSONObject().put("type", "status").put("text", statusText))
+                send(JSONObject().put("type", "status").put("text", statusText))
             } finally {
                 running = false; waitingForUser = null
-                relay.send(JSONObject().put("type", "show").put("id", "idle").put("rgb", JSONArray(listOf(24, 24, 24))).put("zone", 0).put("label", "Idle"))
+                send(JSONObject().put("type", "show").put("id", "idle").put("rgb", JSONArray(listOf(24, 24, 24))).put("zone", 0).put("label", "Idle"))
             }
         }
     }
@@ -195,7 +227,7 @@ class AppState(context: Context, private val scope: CoroutineScope) {
     private suspend fun showPatch(p: Patch, index: Int, total: Int) {
         val waiter = CompletableDeferred<Unit>()
         shownWaiters[p.id] = waiter
-        val sent = relay.send(JSONObject().put("type", "show").put("id", p.id)
+        val sent = send(JSONObject().put("type", "show").put("id", p.id)
             .put("rgb", JSONArray(listOf(p.r, p.g, p.b))).put("zone", p.zone).put("label", p.label)
             .put("index", index).put("total", total))
         if (!sent || !displayPresent) {
@@ -229,7 +261,7 @@ class AppState(context: Context, private val scope: CoroutineScope) {
                 while (isActive) {
                     val m = withContext(Dispatchers.Default) { eng.readLive() }
                     live = m
-                    if (relay.connected) relay.send(m.toJson().put("type", "live").apply { lux?.let { put("lux", it) } })
+                    if (displayPresent) send(m.toJson().put("type", "live").apply { lux?.let { put("lux", it) } })
                     delay(150)
                 }
             } catch (e: Exception) {
@@ -241,5 +273,5 @@ class AppState(context: Context, private val scope: CoroutineScope) {
 
     fun setLiveReference() { liveReference = live }
 
-    fun release() { runJob?.cancel(); liveJob?.cancel(); sensorManager.unregisterListener(lightListener); camera.close(); relay.disconnect() }
+    fun release() { runJob?.cancel(); liveJob?.cancel(); sensorManager.unregisterListener(lightListener); camera.close(); relay.disconnect(); localServer?.stopServer(); localServer = null }
 }

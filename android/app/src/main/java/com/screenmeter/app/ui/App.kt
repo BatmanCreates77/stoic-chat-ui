@@ -93,15 +93,31 @@ private fun HomeScreen(state: AppState, hasPermission: Boolean, requestPermissio
             Card {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Companion page", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(value = state.relayUrl, onValueChange = { state.relayUrl = it }, label = { Text("Relay URL (http://host:port)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = state.code, onValueChange = { state.code = it.uppercase().take(6) }, label = { Text("Session code from the page") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters), modifier = Modifier.fillMaxWidth())
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { state.connect() }) { Text("Connect") }
-                        OutlinedButton(onClick = { state.disconnect() }) { Text("Disconnect") }
+                    if (!state.useRemoteRelay) {
+                        Text("The phone serves the page. On a computer on the same Wi-Fi, open:", style = MaterialTheme.typography.bodySmall)
+                        if (state.serverAddresses.isEmpty()) Text(state.serverState, color = Scheme.error, style = MaterialTheme.typography.bodySmall)
+                        state.serverAddresses.forEach { ip ->
+                            Text("http://$ip:8787", fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Scheme.primary)
+                        }
+                        Text("If it does not load, the network may isolate devices: turn on the phone's hotspot, join it from the computer, and tap Refresh.", style = MaterialTheme.typography.bodySmall, color = Scheme.secondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { state.refreshAddresses() }) { Text("Refresh address") }
+                        }
+                    } else {
+                        OutlinedTextField(value = state.relayUrl, onValueChange = { state.relayUrl = it }, label = { Text("Relay URL (http://host:port)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = state.code, onValueChange = { state.code = it.uppercase().take(6) }, label = { Text("Session code from the page") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters), modifier = Modifier.fillMaxWidth())
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { state.connect() }) { Text("Connect") }
+                            OutlinedButton(onClick = { state.disconnect() }) { Text("Disconnect") }
+                        }
+                        Text("Relay: ${state.relayState}", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Relay: ${state.relayState}", style = MaterialTheme.typography.bodySmall)
-                    Text(if (state.displayPresent) "Display connected ${state.displayInfo}" else "Display not connected", color = if (state.displayPresent) Scheme.primary else Scheme.secondary, style = MaterialTheme.typography.bodySmall)
+                    Text(if (state.displayPresent) "Display connected ${state.displayInfo}" else "Waiting for a browser to open the page", color = if (state.displayPresent) Scheme.primary else Scheme.secondary, style = MaterialTheme.typography.bodySmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = state.useRemoteRelay, onCheckedChange = { state.useRemoteRelay = it })
+                        Text("Use a remote relay server instead (advanced)", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
             Card {

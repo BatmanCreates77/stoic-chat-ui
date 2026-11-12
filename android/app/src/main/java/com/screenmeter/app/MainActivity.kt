@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         state = AppState(this, lifecycleScope)
+        state.startLocalServer()
         hasPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         if (hasPermission) state.probeCamera() else permissionLauncher.launch(Manifest.permission.CAMERA)
         setContent {

@@ -43,17 +43,20 @@ docs/      Research notes
 
 ## Quick start
 
-1. **Relay + page** (any machine on the same Wi-Fi as the phone):
+1. **Phone app** serves the companion page itself. Install it, open it, and the home screen shows an address such as
+   `http://192.168.1.23:8787`. Open that on any computer on the same Wi-Fi. If the network isolates devices, turn on
+   the phone's hotspot, join it from the computer and tap *Refresh address*. The Node relay in `server/` is only for
+   the optional remote mode (phone and computer on different networks):
    ```bash
-   cd server && npm install && npm start      # http://<your-ip>:8787
+   cd server && npm install && npm start      # http://<your-ip>:8787, then tick "remote relay" in the app
    ```
-2. **Phone app**: run `android/build-apk.sh` (clean build, unit tests, release APK, ZIP and signature check) and
+2. **Building the app**: run `android/build-apk.sh` (clean build, unit tests, release APK, ZIP and signature check) and
    install `android/app/build/outputs/apk/release/app-release.apk`. The CI workflow does the same and uploads the APK.
    Builds are signed with the machine's own Android debug key; installing an APK from a different machine over an
    existing one needs an uninstall first. On a Galaxy S24 series phone, turn off **Settings → Security and privacy →
    Auto Blocker** before sideloading, or Android refuses every APK with a generic "App not installed" message.
-3. Open the page on the monitor you want to test, note the 5-character code, enter the relay URL and code in the app,
-   tap **Connect**.
+3. Open the page on the monitor you want to test. The page says "direct" when the phone is serving it and the app
+   shows "Display connected".
 4. Dim the room, put the monitor in its sRGB/standard mode, disable dynamic contrast and Night Light.
 5. On the page click **Enter display mode**. Press the phone's main camera flat against the screen centre and tap
    **Full test** (about 2 minutes) or **Quick test**. Tick *uniformity* to be prompted through nine zones.

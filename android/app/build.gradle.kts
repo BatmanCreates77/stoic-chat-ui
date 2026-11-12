@@ -12,8 +12,8 @@ android {
         applicationId = "com.screenmeter.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     buildTypes {
@@ -29,6 +29,11 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+    // The companion page is served by the phone itself; ship the web/ folder as app assets.
+    sourceSets["main"].assets.srcDirs("../../web")
+    androidResources {
+        ignoreAssetsPattern = "!*.test.js"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -54,6 +59,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("org.nanohttpd:nanohttpd-websocket:2.3.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303") // android.jar stubs org.json in JVM tests
 }
